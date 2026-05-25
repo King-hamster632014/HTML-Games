@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arras.io Trainer - Fixed Login</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; color: white; user-select: none; }
+        #auth-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        .auth-box { background: #333; padding: 40px; border-radius: 10px; text-align: center; border: 2px solid #00B2E1; box-shadow: 0 0 20px rgba(0,178,225,0.3); }
+        input { padding: 12px; margin: 10px; width: 220px; border-radius: 4px; border: 1px solid #555; background: #222; color: white; }
+        button { padding: 12px 25px; background: #00B2E1; border: none; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #00d2ff; transform: scale(1.05); }
+        
+        #ui { position: absolute; top: 15px; left: 15px; pointer-events: none; display: none; }
+        #admin-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #222; padding: 25px; border: 2px solid gold; z-index: 200; border-radius: 10px; }
+        #stats-menu { position: absolute; bottom: 15px; left: 15px; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; display: none; }
+        .stat-row { margin: 8px 0; font-size: 14px; }
+        .bar-bg { display: inline-block; width: 100px; height: 12px; background: #333; margin-left: 10px; vertical-align: middle; border: 1px solid #555; }
+        .bar-fill { height: 100%; background: #00B2E1; width: 0%; transition: width 0.3s; }
+        #hp-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 300px; height: 12px; background: #333; border: 2px solid #555; display: none; }
+        #hp-fill { width: 100%; height: 100%; background: #85e37d; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-overlay">
+        <div class="auth-box">
+            <h1 style="color: #00B2E1; margin-top: 0;">ARRAS TRAINER</h1>
+            <input type="text" id="usernameInput" placeholder="Enter Username..." maxlength="15">
+            <br>
+            <button id="loginBtn">ENTER GAME</button>
+            <p style="font-size: 11px; color: #aaa; margin-top: 20px;">Progress saves automatically to your browser.</p>
+        </div>
+    </div>
+
+    <div id="admin-panel">
+        <h2 style="color: gold; margin-top: 0;">SYSTEM OVERRIDE</h2>
+        <input type="password" id="admin-key" placeholder="Enter Secret Key">
+        <div id="admin-controls" style="display:none; margin-top: 15px;">
+            <button onclick="addPoints(10)">+10 Points</button>
+            <button onclick="toggleGodMode()">GOD MODE</button>
+            <button onclick="clearEnemies()">NUKE BOTS</button>
+        </div>
+        <br><br>
+        <button onclick="closeAdmin()" style="background: #555;">Back to Game</button>
+    </div>
+
+    <div id="ui">
+        <h3 id="player-display" style="margin:0; color: #00B2E1;">Pilot: ---</h3>
+        <p style="margin: 5px 0;">Score: <span id="score">0</span> | Points: <span id="points" style="color: #ffeb3b;">0</span></p>
+        <p style="font-size: 12px;"><kbd>1-5</kbd> Class | <kbd>E</kbd> Auto | <kbd>Y</kbd> Admin</p>
+    </div>
+
+    <div id="hp-container"><div id="hp-fill"></div></div>
+
+    <div id="stats-menu">
+        <div class="stat-row"><kbd>M</kbd> Speed: <span id="s-move">0</span> <div class="bar-bg"><div id="b-move" class="bar-fill"></div></div></div>
+        <div class="stat-row"><kbd>R</kbd> Reload: <span id="s-reload">0</span> <div class="bar-bg"><div id="b-reload" class="bar-fill"></div></div></div>
+        <div class="stat-row"><kbd>B</kbd> Bullets: <span id="s-bullet">0</span> <div class="bar-bg"><div id="b-bullet" class="bar-fill"></div></div></div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// --- GAME STATE ---
+let gameActive = false;
+let godMode = false;
+let isAutoFire = false;
+let score = 0;
+let skillPoints = 0;
+let lastFire = 0;
+let username = "";
+let stats = { move: 0, reload: 0, bullet: 0 };
+
+const keys = {}, bullets = [], enemies = [];
+const worldSize = 3000;
+
+const CLASSES = {
+    1: { name: "Twin", barrels: [{a: 0, x: 10, y: -10, w: 35, h: 20}, {a: 0, x: 10, y: 10, w: 35, h: 20}], bSpeed: 8, reload: 200, spread: 0.1, bSize: 8 },
+    2: { name: "Sniper", barrels: [{a: 0, x: 10, y: 0, w: 50, h: 18}], bSpeed: 15, reload: 900, spread: 0, bSize: 10 },
+    3: { name: "Flank Guard", barrels: [{a: 0, x: 10, y: 0, w: 35, h: 20}, {a: Math.PI, x: 10, y: 0, w: 35, h: 20}], bSpeed: 8, reload: 350, spread: 0.1, bSize: 8 },
+    4: { name: "Machine Gun", barrels: [{a: 0, x: 10, y: 0, w: 35, h: 25}], bSpeed: 9, reload: 100, spread: 0.4, bSize: 7 },
+    5: { name: "Destroyer", barrels: [{a: 0, x: 10, y: 0, w: 40, h: 35}], bSpeed: 5, reload: 1500, spread: 0, bSize: 22 }
+};
+
+let currentClass = CLASSES[1];
+const player = { x: worldSize/2, y: worldSize/2, radius: 22, color: '#00B2E1', hp: 100 };
+
+// --- CORE FUNCTIONS ---
+document.getElementById('loginBtn').addEventListener('click', function() {
+    username = document.getElementById('usernameInput').value || "Guest";
+    
+    // Attempt Load
+    const saved = localStorage.getItem('arras_v2_' + username);
+    if (saved) {
+        const data = JSON.parse(saved);
+        score = data.score || 0;
+        skillPoints = data.skillPoints || 0;
+        stats = data.stats || { move: 0, reload: 0, bullet: 0 };
+    }
+
+    // Show Game UI
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('ui').style.display = 'block';
+    document.getElementById('stats-menu').style.display = 'block';
+    document.getElementById('hp-container').style.display = 'block';
+    document.getElementById('player-display').innerText = "Pilot: " + username;
+    
+    gameActive = true;
+    updateUI();
+});
+
+function saveGame() {
+    if (!gameActive) return;
+    const data = { score, skillPoints, stats };
+    localStorage.setItem('arras_v2_' + username, JSON.stringify(data));
+}
+
+function updateUI() {
+    document.getElementById('score').innerText = score;
+    document.getElementById('points').innerText = skillPoints;
+    ['move', 'reload', 'bullet'].forEach(s => {
+        document.getElementById(`s-${s}`).innerText = stats[s];
+        document.getElementById(`b-${s}`).style.width = (stats[s] * 10) + "%";
+    });
+}
+
+// --- ADMIN CONTROLS ---
+window.addPoints = (n) => { skillPoints += n; updateUI(); saveGame(); };
+window.toggleGodMode = () => { godMode = !godMode; player.hp = 100; alert("God Mode: " + godMode); };
+window.clearEnemies = () => { enemies.length = 0; };
+window.closeAdmin = () => { document.getElementById('admin-panel').style.display = 'none'; };
+
+// --- INPUT HANDLING ---
+window.addEventListener('keydown', e => {
+    if (!gameActive) return;
+    keys[e.code] = true;
+    
+    if (e.code === 'KeyY') document.getElementById('admin-panel').style.display = 'block';
+    if (e.code === 'Enter' && document.getElementById('admin-panel').style.display === 'block') {
+        if (document.getElementById('admin-key').value === 'arras123') {
+            document.getElementById('admin-controls').style.display = 'block';
+        }
+    }
+
+    if (CLASSES[e.key]) {
+        currentClass = CLASSES[e.key];
+    }
+
+    if (e.code === 'KeyE') isAutoFire = !isAutoFire;
+
+    if (skillPoints > 0) {
+        if (e.code === 'KeyM' && stats.move < 10) { stats.move++; skillPoints--; }
+        if (e.code === 'KeyR' && stats.reload < 10) { stats.reload++; skillPoints--; }
+        if (e.code === 'KeyB' && stats.bullet < 10) { stats.bullet++; skillPoints--; }
+        updateUI(); saveGame();
+    }
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+let mouseX = 0, mouseY = 0, isMouseDown = false;
+window.addEventListener('mousedown', () => isMouseDown = true);
+window.addEventListener('mouseup', () => isMouseDown = false);
+window.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+
+// --- GAME LOGIC ---
+function shoot() {
+    const reloadSpeed = Math.max(50, currentClass.reload - (stats.reload * 18));
+    const now = Date.now();
+    if (now - lastFire < reloadSpeed) return;
+    
+    const angle = Math.atan2(mouseY - canvas.height/2, mouseX - canvas.width/2);
+    currentClass.barrels.forEach(b => {
+        const finalAngle = angle + b.a + (Math.random()-0.5)*currentClass.spread;
+        bullets.push({
+            x: player.x + Math.cos(finalAngle)*40,
+            y: player.y + Math.sin(finalAngle)*40,
+            vx: Math.cos(finalAngle)*(currentClass.bSpeed + stats.bullet),
+            vy: Math.sin(finalAngle)*(currentClass.bSpeed + stats.bullet),
+            radius: currentClass.bSize, life: 120
+        });
+    });
+    lastFire = now;
+}
+
+function update() {
+    if (!gameActive) return;
+
+    const moveSpeed = 4 + (stats.move * 0.6);
+    if (keys['KeyW']) player.y -= moveSpeed;
+    if (keys['KeyS']) player.y += moveSpeed;
+    if (keys['KeyA']) player.x -= moveSpeed;
+    if (keys['KeyD']) player.x += moveSpeed;
+
+    if (isMouseDown || isAutoFire) shoot();
+
+    bullets.forEach((b, i) => {
+        b.x += b.vx; b.y += b.vy; b.life--;
+        if (b.life <= 0) bullets.splice(i, 1);
+    });
+
+    enemies.forEach((en, i) => {
+        const dx = player.x - en.x, dy = player.y - en.y, dist = Math.hypot(dx, dy);
+        en.x += (dx / dist) * 1.6; en.y += (dy / dist) * 1.6;
+
+        if (dist < player.radius + en.radius && !godMode) {
+            player.hp -= 0.8;
+            if (player.hp <= 0) { player.hp = 100; score = 0; saveGame(); updateUI(); }
+        }
+
+        bullets.forEach((b, bi) => {
+            if (Math.hypot(b.x - en.x, b.y - en.y) < en.radius + b.radius) {
+                en.health--; bullets.splice(bi, 1);
+                if (en.health <= 0) {
+                    enemies.splice(i, 1); score += 20;
+                    if (score % 100 === 0) skillPoints++;
+                    updateUI(); saveGame();
+                }
+            }
+        });
+    });
+    
+    if (enemies.length < 15 && Math.random() < 0.03) {
+        enemies.push({ x: player.x + (Math.random()-0.5)*1400, y: player.y + (Math.random()-0.5)*1400, radius: 20, health: 3 });
+    }
+    document.getElementById('hp-fill').style.width = player.hp + "%";
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!gameActive) { requestAnimationFrame(draw); return; }
+
+    ctx.save();
+    ctx.translate(canvas.width/2 - player.x, canvas.height/2 - player.y);
+
+    // Background Grid
+    ctx.strokeStyle = '#252525'; ctx.lineWidth = 2;
+    for(let i=0; i<=worldSize; i+=50) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, worldSize); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(worldSize, i); ctx.stroke();
+    }
+
+    enemies.forEach(en => {
+        ctx.fillStyle = '#F14E54'; ctx.beginPath(); ctx.arc(en.x, en.y, en.radius, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 3; ctx.stroke();
+    });
+
+    ctx.fillStyle = '#EEE';
+    bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill(); });
+
+    // Draw Player
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    const angle = Math.atan2(mouseY - canvas.height/2, mouseX - canvas.width/2);
+    ctx.fillStyle = '#999'; ctx.strokeStyle = '#555';
+    currentClass.barrels.forEach(b => {
+        ctx.save(); ctx.rotate(angle + b.a); ctx.fillRect(b.x, b.y - b.h/2, b.w, b.h); ctx.strokeRect(b.x, b.y - b.h/2, b.w, b.h); ctx.restore();
+    });
+    ctx.beginPath(); ctx.arc(0, 0, player.radius, 0, Math.PI*2);
+    ctx.fillStyle = player.color; ctx.fill(); ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
+    update();
+    requestAnimationFrame(draw);
+}
+
+draw();
+window.onresize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+</script>
+</body>
+</html>
