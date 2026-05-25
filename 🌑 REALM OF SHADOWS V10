@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Realm of Shadows V10 - Final Boss</title>
+    <style>
+        :root {
+            --bg: #050508;
+            --panel: #11111d;
+            --accent: #fca311;
+            --hp: #ff4d6d;
+            --mana: #00b4d8;
+            --rarity-mythic: #ff00ff;
+            --text: #e0e1dd;
+        }
+
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        #game-container { background: var(--panel); width: 850px; padding: 25px; border-radius: 15px; border: 1px solid #2a2a3a; box-shadow: 0 0 60px rgba(255, 0, 0, 0.2); }
+        
+        .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 15px; }
+        .card { background: rgba(0,0,0,0.5); padding: 8px; border-radius: 6px; border: 1px solid #333; text-align: center; font-size: 12px; }
+        
+        #text-box { background: #000; height: 250px; padding: 15px; border-radius: 8px; overflow-y: auto; margin-bottom: 20px; font-family: 'Consolas', monospace; border: 1px solid #222; font-size: 13px; line-height: 1.6; }
+        #controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+        button { padding: 16px; background: #1b1b2b; color: #fff; border: 1px solid #444; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover:not(:disabled) { background: #2a2a4a; border-color: var(--accent); color: var(--accent); }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .boss-name { color: #ff0000; font-weight: bold; font-size: 1.2em; text-shadow: 0 0 10px red; }
+        .victory-text { color: var(--accent); font-size: 18px; text-align: center; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h2 id="game-title" style="color:var(--accent); text-align:center; margin-top:0; letter-spacing: 3px;">🌑 REALM OF SHADOWS V10</h2>
+    
+    <div class="stat-grid">
+        <div class="card">HP: <span id="hp" style="color:var(--hp)">-</span></div>
+        <div class="card">MP: <span id="mana" style="color:var(--mana)">-</span></div>
+        <div class="card">GOLD: <span id="gold" style="color:#ffd166">-</span></div>
+        <div class="card">POTS: <span id="pots" style="color:#06d6a0">-</span></div>
+        <div class="card">ATK: <span id="atk-val" style="color:var(--accent)">-</span></div>
+    </div>
+
+    <div id="text-box">The final chapter begins...</div>
+
+    <div id="controls">
+        <button id="b1"></button>
+        <button id="b2"></button>
+        <button id="b3"></button>
+        <button id="b4"></button>
+    </div>
+</div>
+
+<script>
+    // --- STATE ---
+    let player = {
+        hp: 200, maxHp: 200, mana: 100, maxMana: 100, 
+        gold: 200, lvl: 1, pots: 2,
+        weapon: { name: "Steel Sword", pwr: 25 },
+        pet: 'turtle'
+    };
+    let boss = null;
+
+    function log(msg, color = "var(--text)") {
+        const box = document.getElementById("text-box");
+        box.innerHTML += `<div style="color:${color}">> ${msg}</div>`;
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function updateUI() {
+        document.getElementById("hp").innerText = Math.max(0, player.hp);
+        document.getElementById("mana").innerText = player.mana;
+        document.getElementById("gold").innerText = player.gold;
+        document.getElementById("pots").innerText = player.pots;
+        document.getElementById("atk-val").innerText = player.weapon.pwr;
+    }
+
+    function setMenu(msg, b1, b2, b3, b4) {
+        log(msg);
+        configBtn("b1", b1);
+        configBtn("b2", b2);
+        configBtn("b3", b3);
+        configBtn("b4", b4);
+        updateUI();
+    }
+
+    function configBtn(id, data) {
+        const btn = document.getElementById(id);
+        if (data) {
+            btn.style.display = "block";
+            btn.innerText = data.text;
+            btn.onclick = data.fn;
+        } else {
+            btn.style.display = "none";
+        }
+    }
+
+    // --- GAME FLOW ---
+    function init() {
+        document.getElementById("text-box").innerHTML = "";
+        setMenu("You stand before the <b>Abyssal Gates</b>. The final merchant offers his last wares.",
+            { text: "Buy Crate (100g)", fn: openCrate },
+            { text: "Buy Potion (50g)", fn: buyPot },
+            { text: "ENTER THE VOID", fn: startFinalBoss },
+            { text: "Check Gear", fn: () => log(`Weapon: ${player.weapon.name} (${player.weapon.pwr} ATK)`) }
+        );
+    }
+
+    function buyPot() {
+        if (player.gold >= 50) { player.gold -= 50; player.pots++; log("Bought a Health Potion."); updateUI(); }
+        else { log("Not enough gold!"); }
+    }
+
+    function openCrate() {
+        if (player.gold < 100) return log("Need 100g!");
+        player.gold -= 100;
+        let r = Math.random();
+        if (r > 0.8) { player.weapon = { name: "God-Slayer", pwr: 150 }; log("MYTHIC! You found the God-Slayer!", "var(--rarity-mythic)"); }
+        else { player.weapon = { name: "Void Blade", pwr: 60 }; log("You found a Void Blade."); }
+        updateUI();
+    }
+
+    // --- BOSS MECHANICS ---
+    function startFinalBoss() {
+        boss = { name: "VOID SOVEREIGN", hp: 1000, maxHp: 1000, atk: 25, phase: 1 };
+        log("The Gates creak open... The Sovereign awaits.", "red");
+        bossMenu();
+    }
+
+    function bossMenu() {
+        let bossStatus = `<span class="boss-name">${boss.name}</span> [HP: ${boss.hp}/${boss.maxHp}]`;
+        setMenu(bossStatus,
+            { text: "Heroic Strike", fn: attackBoss },
+            { text: "Mana Blast (30m)", fn: magicBoss },
+            { text: "Drink Potion", fn: drinkPot },
+            null
+        );
+    }
+
+    function attackBoss() {
+        let d = player.weapon.pwr + Math.floor(Math.random() * 10);
+        boss.hp -= d;
+        log(`You strike the Sovereign for ${d} damage!`);
+        checkBossPhase();
+    }
+
+    function magicBoss() {
+        if (player.mana < 30) return log("Out of Mana!");
+        player.mana -= 30;
+        let d = player.weapon.pwr * 3;
+        boss.hp -= d;
+        log(`ARCANUM! You blast the Sovereign for ${d} damage!`, "var(--mana)");
+        checkBossPhase();
+    }
+
+    function drinkPot() {
+        if (player.pots > 0) {
+            player.pots--; player.hp = Math.min(player.maxHp, player.hp + 100);
+            log("Healed 100 HP!", "#06d6a0");
+            enemyTurn();
+        } else { log("No potions left!"); }
+    }
+
+    function checkBossPhase() {
+        if (boss.hp <= 0) return winGame();
+        
+        if (boss.phase === 1 && boss.hp <= 500) {
+            boss.phase = 2;
+            boss.atk = 50;
+            log("<b>PHASE 2:</b> The Sovereign's armor shatters! He grows furious!", "red");
+        }
+        enemyTurn();
+    }
+
+    function enemyTurn() {
+        let d = boss.atk;
+        if (player.pet === 'turtle') d -= 10;
+        player.hp -= d;
+        log(`${boss.name} strikes you for ${d} damage!`, "var(--hp)");
+        
+        if (player.hp <= 0) {
+            alert("The Shadows have consumed the world. GAME OVER.");
+            location.reload();
+        } else { bossMenu(); }
+    }
+
+    function winGame() {
+        document.getElementById("controls").style.display = "none";
+        document.getElementById("text-box").innerHTML = `
+            <div class="victory-text">
+                THE SOVEREIGN FALLS!<br><br>
+                The void recedes, and light returns to the Shattered Realm.<br>
+                You have finished your journey, Brave Traveler.<br><br>
+                <button onclick="location.reload()" style="display:block; margin:auto;">PLAY AGAIN</button>
+            </div>
+        `;
+        log("VICTORY!", "var(--accent)");
+    }
+
+    init();
+</script>
+</body>
+</html>
