@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arras Trainer Pro</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1b1b1b; font-family: 'Ubuntu', sans-serif; color: white; user-select: none; }
+        canvas { display: block; }
+
+        /* Login Overlay */
+        #auth-overlay { position: fixed; inset: 0; background: #111; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .box { background: #222; padding: 30px; border: 2px solid #00B2E1; border-radius: 5px; text-align: center; }
+        
+        /* Admin Panel - Hidden by default */
+        #admin-panel { 
+            display: none; 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            width: 220px; 
+            background: rgba(0,0,0,0.9); 
+            border: 2px solid gold; 
+            padding: 15px; 
+            z-index: 5000; 
+        }
+
+        /* HUD Elements */
+        #ui { position: absolute; top: 10px; left: 10px; pointer-events: none; }
+        #stats-menu { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 4px; }
+        .bar-bg { display: inline-block; width: 80px; height: 10px; background: #333; margin-left: 5px; }
+        .bar-fill { height: 100%; background: #00B2E1; width: 0%; }
+        #hp-bar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 250px; height: 10px; background: #333; border: 1px solid #777; }
+        #hp-inner { width: 100%; height: 100%; background: #85e37d; }
+
+        input { background: #111; color: white; border: 1px solid #444; padding: 8px; margin: 5px; }
+        button { background: #00B2E1; color: white; border: none; padding: 8px 15px; cursor: pointer; font-weight: bold; }
+        .admin-btn { background: #333; color: gold; border: 1px solid gold; width: 100%; margin: 3px 0; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-overlay">
+        <div class="box">
+            <h1 style="color:#00B2E1">ARRAS TRAINER</h1>
+            <input type="text" id="nick" placeholder="Nickname">
+            <button onclick="startGame()">PLAY</button>
+        </div>
+    </div>
+
+    <div id="admin-panel">
+        <h4 style="color:gold; margin:0 0 10px 0;">ADMIN PANEL</h4>
+        <input type="password" id="pass" placeholder="Password...">
+        <div id="controls" style="display:none">
+            <button class="admin-btn" onclick="cheatPoints()">+100 POINTS</button>
+            <button class="admin-btn" onclick="cheatGod()">GOD MODE</button>
+            <button class="admin-btn" onclick="cheatBoss()">SPAWN BOSS</button>
+        </div>
+        <button onclick="closeAdmin()" style="width:100%; margin-top:10px; background:#444;">CLOSE</button>
+    </div>
+
+    <div id="ui">
+        <div id="name-tag" style="color:#00B2E1; font-weight:bold;">---</div>
+        <div>Score: <span id="scr">0</span> | Points: <span id="pts">0</span></div>
+    </div>
+
+    <div id="hp-bar"><div id="hp-inner"></div></div>
+
+    <div id="stats-menu">
+        <div>SPD <div class="bar-bg"><div id="m-spd" class="bar-fill"></div></div></div>
+        <div>RLD <div class="bar-bg"><div id="m-rld" class="bar-fill"></div></div></div>
+        <div>BLT <div class="bar-bg"><div id="m-blt" class="bar-fill"></div></div></div>
+    </div>
+
+    <canvas id="ctx"></canvas>
+
+<script>
+const canvas = document.getElementById('ctx');
+const g = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let active = false, god = false, auto = false;
+let score = 0, points = 0, lastFire = 0, stats = {m:0, r:0, b:0};
+const keys = {}, bullets = [], enemies = [], bosses = [];
+const world = 4000;
+
+const TANKS = {
+    1: { n: "Twin", b: [{a:0,x:10,y:-10,w:35,h:20},{a:0,x:10,y:10,w:35,h:20}], s:8, r:200, sz:8 },
+    2: { n: "Sniper", b: [{a:0,x:10,y:0,w:50,h:18}], s:16, r:900, sz:10 },
+    3: { n: "Destroyer", b: [{a:0,x:10,y:0,w:45,h:35}], s:5, r:1500, sz:22 }
+};
+let tank = TANKS[1];
+const p = { x: 2000, y: 2000, r: 22, hp: 100 };
+
+function startGame() {
+    active = true;
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('name-tag').innerText = document.getElementById('nick').value || "Tank";
+}
+
+// Admin Logic
+function closeAdmin() { document.getElementById('admin-panel').style.display = 'none'; }
+function cheatPoints() { points += 100; updateUI(); }
+function cheatGod() { god = !god; p.hp = 100; alert("God Mode: " + god); }
+function cheatBoss() { bosses.push({x: p.x+300, y: p.y+300, r: 60, hp: 50, max: 50, lf: 0}); }
+
+function updateUI() {
+    document.getElementById('scr').innerText = score;
+    document.getElementById('pts').innerText = points;
+    document.getElementById('m-spd').style.width = (stats.m*10) + "%";
+    document.getElementById('m-rld').style.width = (stats.r*10) + "%";
+    document.getElementById('m-blt').style.width = (stats.b*10) + "%";
+}
+
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if(e.code === 'KeyY') document.getElementById('admin-panel').style.display = 'block';
+    if(e.code === 'Enter' && document.getElementById('admin-panel').style.display === 'block') {
+        if(document.getElementById('pass').value === 'arras123') document.getElementById('controls').style.display = 'block';
+    }
+    if(e.code === 'KeyE') auto = !auto;
+    if(points > 0) {
+        if(e.code === 'KeyM' && stats.m < 10) { stats.m++; points--; }
+        if(e.code === 'KeyR' && stats.r < 10) { stats.r++; points--; }
+        if(e.code === 'KeyB' && stats.b < 10) { stats.b++; points--; }
+        updateUI();
+    }
+    if(TANKS[e.key]) tank = TANKS[e.key];
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+let mx = 0, my = 0;
+window.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+function loop() {
+    if(active) {
+        let s = 4 + (stats.m * 0.7);
+        if(keys['KeyW']) p.y -= s; if(keys['KeyS']) p.y += s;
+        if(keys['KeyA']) p.x -= s; if(keys['KeyD']) p.x += s;
+
+        if(auto || keys['Space']) {
+            let cool = Math.max(50, tank.r - (stats.r * 25));
+            if(Date.now() - lastFire > cool) {
+                let ang = Math.atan2(my - canvas.height/2, mx - canvas.width/2);
+                tank.b.forEach(b => {
+                    bullets.push({x: p.x+Math.cos(ang+b.a)*40, y: p.y+Math.sin(ang+b.a)*40, vx: Math.cos(ang+b.a)*(tank.s+stats.b), vy: Math.sin(ang+b.a)*(tank.s+stats.b), r: tank.sz, life: 100, owner: 'p'});
+                });
+                lastFire = Date.now();
+            }
+        }
+
+        bullets.forEach((b, i) => {
+            b.x += b.vx; b.y += b.vy; b.life--;
+            if(b.life <= 0) bullets.splice(i, 1);
+        });
+
+        enemies.forEach((en, i) => {
+            let d = Math.hypot(p.x - en.x, p.y - en.y);
+            en.x += (p.x - en.x)/d * 1.5; en.y += (p.y - en.y)/d * 1.5;
+            if(d < p.r + en.r && !god) { p.hp -= 0.5; if(p.hp <= 0) { p.hp=100; score=0; updateUI(); }}
+            bullets.forEach((b, bi) => {
+                if(b.owner === 'p' && Math.hypot(b.x - en.x, b.y - en.y) < en.r + b.r) {
+                    en.h--; bullets.splice(bi, 1);
+                    if(en.h <= 0) { enemies.splice(i, 1); score += 20; if(score%100===0) points++; updateUI(); }
+                }
+            });
+        });
+
+        bosses.forEach((b, i) => {
+            let d = Math.hypot(p.x - b.x, p.y - b.y);
+            b.x += (p.x - b.x)/d * 1; b.y += (p.y - b.y)/d * 1;
+            if(Date.now() - b.lf > 1000) {
+                for(let j=0; j<8; j++) {
+                    let a = (Math.PI*2/8)*j;
+                    bullets.push({x: b.x, y: b.y, vx: Math.cos(a)*5, vy: Math.sin(a)*5, r: 12, life: 150, owner: 'b'});
+                }
+                b.lf = Date.now();
+            }
+            bullets.forEach((bul, bi) => {
+                if(bul.owner === 'p' && Math.hypot(bul.x - b.x, bul.y - b.y) < b.r + bul.r) {
+                    b.hp--; bullets.splice(bi, 1);
+                    if(b.hp <= 0) { bosses.splice(i, 1); score += 500; points += 5; updateUI(); }
+                }
+            });
+        });
+
+        if(enemies.length < 10 && Math.random() < 0.02) enemies.push({x: p.x + (Math.random()-0.5)*1500, y: p.y + (Math.random()-0.5)*1500, r: 20, h: 3});
+        document.getElementById('hp-inner').style.width = p.hp + "%";
+    }
+
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    if(active) {
+        g.save();
+        g.translate(canvas.width/2 - p.x, canvas.height/2 - p.y);
+        g.strokeStyle = '#222';
+        for(let i=0; i<=world; i+=50) { g.beginPath(); g.moveTo(i,0); g.lineTo(i,world); g.stroke(); g.beginPath(); g.moveTo(0,i); g.lineTo(world,i); g.stroke(); }
+        
+        enemies.forEach(en => { g.fillStyle = '#F14E54'; g.beginPath(); g.arc(en.x, en.y, en.r, 0, Math.PI*2); g.fill(); g.stroke(); });
+        bosses.forEach(b => { g.fillStyle = '#555'; g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI*2); g.fill(); g.strokeStyle = 'red'; g.stroke(); });
+        bullets.forEach(b => { g.fillStyle = b.owner === 'p' ? '#00B2E1' : 'red'; g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI*2); g.fill(); });
+
+        g.save();
+        g.translate(p.x, p.y);
+        let a = Math.atan2(my - canvas.height/2, mx - canvas.width/2);
+        g.fillStyle = '#999';
+        tank.b.forEach(b => { g.save(); g.rotate(a+b.a); g.fillRect(b.x, b.y-b.h/2, b.w, b.h); g.strokeRect(b.x, b.y-b.h/2, b.w, b.h); g.restore(); });
+        g.fillStyle = '#00B2E1'; g.beginPath(); g.arc(0, 0, p.r, 0, Math.PI*2); g.fill(); g.stroke();
+        g.restore();
+        g.restore();
+    }
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
