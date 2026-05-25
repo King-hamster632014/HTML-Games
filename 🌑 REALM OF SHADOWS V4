@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Realm of Shadows V4 - Viewer Edition</title>
+    <style>
+        body { background-color: #0d0d12; color: #e0e1dd; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        #game-container { background-color: #1a1a24; width: 600px; padding: 20px; border-radius: 10px; border: 1px solid #333; }
+        #text-box { background: #000; height: 200px; padding: 15px; border-radius: 5px; overflow-y: auto; margin-bottom: 20px; font-family: monospace; border: 1px solid #222; }
+        #controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { padding: 15px; background: #252535; color: #fff; border: 1px solid #3a3a4a; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #3a3a5a; border-color: #fca311; }
+        .stat-bar { display: flex; justify-content: space-between; margin-bottom: 15px; background: #222; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h2 style="color:#fca311; text-align:center;">🌑 REALM OF SHADOWS V4</h2>
+    
+    <div class="stat-bar">
+        <span>HP: <span id="hp" style="color:#ef476f">--</span></span>
+        <span>MP: <span id="mana" style="color:#118ab2">--</span></span>
+        <span>LVL: <span id="lvl">--</span></span>
+    </div>
+
+    <div id="text-box">Welcome, traveler. Initializing...</div>
+
+    <div id="controls">
+        <button id="b1">...</button>
+        <button id="b2">...</button>
+        <button id="b3">...</button>
+        <button id="b4">...</button>
+    </div>
+</div>
+
+<script>
+    // Simplified Player Object (No LocalStorage)
+    let player = null;
+
+    const classes = {
+        warrior: { name: "Warrior", hp: 150, mana: 30 },
+        mage: { name: "Mage", hp: 80, mana: 120 },
+        rogue: { name: "Rogue", hp: 110, mana: 60 }
+    };
+
+    function log(msg) {
+        const box = document.getElementById("text-box");
+        box.innerHTML += `<div>> ${msg}</div>`;
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function updateUI() {
+        if (!player) return;
+        document.getElementById("hp").innerText = player.hp;
+        document.getElementById("mana").innerText = player.mana;
+        document.getElementById("lvl").innerText = player.lvl;
+    }
+
+    function setMenu(msg, b1, b2, b3, b4) {
+        log(msg);
+        applyBtn("b1", b1);
+        applyBtn("b2", b2);
+        applyBtn("b3", b3);
+        applyBtn("b4", b4);
+        updateUI();
+    }
+
+    function applyBtn(id, data) {
+        const btn = document.getElementById(id);
+        if (data) {
+            btn.style.display = "block";
+            btn.innerText = data.text;
+            btn.onclick = data.fn;
+        } else {
+            btn.style.display = "none";
+        }
+    }
+
+    function start() {
+        document.getElementById("text-box").innerHTML = "";
+        setMenu("Choose your character class:",
+            { text: "Warrior", fn: () => selectClass('warrior') },
+            { text: "Mage", fn: () => selectClass('mage') },
+            { text: "Rogue", fn: () => selectClass('rogue') },
+            null
+        );
+    }
+
+    function selectClass(key) {
+        const c = classes[key];
+        player = { charClass: key, hp: c.hp, mana: c.mana, lvl: 1 };
+        log(`You are now a ${c.name}!`);
+        goTown();
+    }
+
+    function goTown() {
+        setMenu("You are in the safe Haven Town.",
+            { text: "Explore Wilds", fn: () => log("You walk into the forest.") },
+            { text: "Rest at Inn", fn: () => log("You feel rested.") },
+            { text: "Restart", fn: () => start() },
+            null
+        );
+    }
+
+    // Run the start function immediately
+    start();
+</script>
+
+</body>
+</html>
