@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>skatez - Pro Skater (Fixed)</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #111122; /* Dark blue background */
+            color: #00ffcc; 
+            font-family: 'Courier New', Courier, monospace; 
+            user-select: none;
+        }
+        #ui-layer { 
+            position: absolute; 
+            top: 20px; 
+            width: 100%; 
+            text-align: center; 
+            pointer-events: none;
+            z-index: 10;
+        }
+        h1 { margin: 0; letter-spacing: 4px; text-transform: uppercase; text-shadow: 0 0 10px #00ffcc; }
+        #score-display { font-size: 24px; margin-top: 10px; color: #fff; font-weight: bold; }
+        p { color: #ff00ff; margin-top: 5px; font-size: 14px; }
+        
+        #game-over {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            cursor: pointer;
+        }
+        #game-over h2 { color: #ff0055; font-size: 48px; margin: 0; }
+        #game-over p { color: #fff; font-size: 18px; margin-top: 10px; }
+        
+        /* Error display box */
+        #error-log {
+            position: absolute; top: 10px; left: 10px; color: red; font-size: 12px; z-index: 100; text-align: left; background: rgba(0,0,0,0.8); padding: 5px; display: none;
+        }
+    </style>
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+</head>
+<body>
+    <div id="error-log"></div>
+    <div id="ui-layer">
+        <h1>skatez</h1>
+        <p>LEFT/RIGHT to steer | SPACEBAR to Kickflip</p>
+        <div id="score-display">Score: 0</div>
+    </div>
+
+    <div id="game-over">
+        <h2>WIPEOUT!</h2>
+        <p>Click anywhere to shred again</p>
+    </div>
+
+    <script>
+        // --- 0. Error Catcher ---
+        window.onerror = function(message, source, lineno, colno, error) {
+            const errLog = document.getElementById('error-log');
+            errLog.style.display = 'block';
+            errLog.innerHTML += `ERROR: ${message}<br>`;
+            return true;
+        };
+
+        // Ensure THREE is loaded
+        if (typeof THREE === 'undefined') {
+            document.getElementById('error-log').style.display = 'block';
+            document.getElementById('error-log').innerHTML = 'FATAL ERROR: Three.js library failed to load. Check your internet or firewall.';
+        }
+
+        // --- 1. Scene Setup ---
+        const scene = new THREE.Scene();
+        // Removed Fog to ensure hardware compatibility
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 10); 
+        camera.lookAt(0, 0, -5);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- 2. Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(10, 20, 10);
+        scene.add(directionalLight);
+
+        // --- 3. Build the Player Group (Rider + Board) ---
+        const playerGroup = new THREE.Group();
+        const board = new THREE.Group();
+        const rider = new THREE.Group();
+
+        // --- THE BOARD ---
+        const deckGeo = new THREE.BoxGeometry(2, 0.2, 5); 
+        const deckMat = new THREE.MeshLambertMaterial({ color: 0x00ffcc }); 
+        const deck = new THREE.Mesh(deckGeo, deckMat);
+        board.add(deck);
+
+        const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.5, 16);
+        const wheelMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+        const wheelPositions = [
+            [-0.8, -0.4,  1.5], [-0.8, -0.4, -1.5], 
+            [ 0.8, -0.4,  1.5], [ 0.8, -0.4, -1.5]  
+        ];
+        wheelPositions.forEach(pos => {
+            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+            wheel.rotation.z = Math.PI / 2;
+            wheel.position.set(pos[0], pos[1], pos[2]);
+            board.add(wheel);
+        });
+
+        // --- THE RIDER ---
+        const riderMat = new THREE.MeshLambertMaterial({ color: 0xff00ff }); 
+
+        const legGeo = new THREE.BoxGeometry(0.5, 1.5, 0.5);
+        const leftLeg = new THREE.Mesh(legGeo, riderMat);
+        leftLeg.position.set(-0.4, 0.8, 0.5);
+        const rightLeg = new THREE.Mesh(legGeo, riderMat);
+        rightLeg.position.set(0.4, 0.8, -0.5);
+        rider.add(leftLeg);
+        rider.add(rightLeg);
+
+        const torsoGeo = new THREE.BoxGeometry(1.4, 1.8, 0.7);
+        const torso = new THREE.Mesh(torsoGeo, riderMat);
+        torso.position.set(0, 2.4, 0);
+        rider.add(torso);
+
+        const headGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+        const head = new THREE.Mesh(headGeo, riderMat);
+        head.position.set(0, 3.8, 0);
+        rider.add(head);
+
+        playerGroup.add(board);
+        playerGroup.add(rider);
+        
+        rider.rotation.y = Math.PI / 2; 
+        playerGroup.position.y = 1; 
+        scene.add(playerGroup);
+
+        // --- 4. Environment (Moving Grid) ---
+        const gridHelper = new THREE.GridHelper(100, 50, 0xff0055, 0x444444);
+        gridHelper.position.y = 0;
+        scene.add(gridHelper);
+
+        // --- 5. Game Variables & Logic ---
+        let score = 0;
+        let gameSpeed = 0.4;
+        let isGameOver = false;
+        let obstacles = [];
+        
+        const keys = { left: false, right: false, space: false };
+        const boardSpeed = 0.3;
+        const xLimit = 8; 
+
+        let isJumping = false;
+        let jumpVelocity = 0;
+        const gravity = -0.025;
+
+        // Input Listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+            if (e.code === 'Space' && !isJumping) {
+                isJumping = true;
+                jumpVelocity = 0.45; 
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+        });
+
+        // Obstacle Spawner
+        function spawnObstacle() {
+            if (isGameOver) return;
+            
+            const obsGeo = new THREE.BoxGeometry(2.5, 1.5, 2.5);
+            const obsMat = new THREE.MeshLambertMaterial({ color: 0xff0055 });
+            const obstacle = new THREE.Mesh(obsGeo, obsMat);
+            
+            const lanes = [-5, 0, 5];
+            const randomLane = lanes[Math.floor(Math.random() * lanes.length)];
+            
+            obstacle.position.set(randomLane, 0.75, -60); 
+            scene.add(obstacle);
+            obstacles.push(obstacle);
+
+            setTimeout(spawnObstacle, Math.random() * 1000 + 800);
+        }
+        spawnObstacle(); 
+
+        // --- 6. Restart Logic ---
+        document.getElementById('game-over').addEventListener('click', () => {
+            isGameOver = false;
+            score = 0;
+            gameSpeed = 0.4;
+            playerGroup.position.x = 0;
+            playerGroup.position.y = 1;
+            playerGroup.rotation.z = 0;
+            board.rotation.z = 0;
+            isJumping = false;
+            
+            obstacles.forEach(obs => scene.remove(obs));
+            obstacles = [];
+            
+            document.getElementById('game-over').style.display = 'none';
+            document.getElementById('score-display').innerText = `Score: ${score}`;
+            
+            spawnObstacle();
+        });
+
+        // --- 7. Animation / Game Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isGameOver) return;
+
+            // Steering
+            if (keys.left && playerGroup.position.x > -xLimit) {
+                playerGroup.position.x -= boardSpeed;
+                playerGroup.rotation.z = 0.2; 
+            } else if (keys.right && playerGroup.position.x < xLimit) {
+                playerGroup.position.x += boardSpeed;
+                playerGroup.rotation.z = -0.2; 
+            } else {
+                playerGroup.rotation.z = 0; 
+            }
+
+            // Jumping & Kickflip
+            if (isJumping) {
+                playerGroup.position.y += jumpVelocity;
+                jumpVelocity += gravity; 
+
+                board.rotation.z += 0.4; 
+
+                if (playerGroup.position.y <= 1) {
+                    playerGroup.position.y = 1;
+                    isJumping = false;
+                    board.rotation.z = 0; 
+                    score += 50; 
+                }
+            }
+
+            // Move Grid
+            gridHelper.position.z += gameSpeed;
+            if (gridHelper.position.z > 2) gridHelper.position.z = 0; 
+
+            // Move Obstacles
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.position.z += gameSpeed;
+
+                if (obs.position.z > -2 && obs.position.z < 2) {
+                    if (Math.abs(playerGroup.position.x - obs.position.x) < 2) {
+                        if (playerGroup.position.y < 2) {
+                            isGameOver = true;
+                            document.getElementById('game-over').style.display = 'flex';
+                        }
+                    }
+                }
+
+                if (obs.position.z > 10) {
+                    scene.remove(obs);
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            // Score
+            score += 1;
+            if (score % 10 === 0) {
+                document.getElementById('score-display').innerText = `Score: ${Math.floor(score / 10)}`;
+            }
+            if (score % 500 === 0) {
+                gameSpeed += 0.02; 
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate(); 
+
+        // --- 8. Window Resize ---
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>
