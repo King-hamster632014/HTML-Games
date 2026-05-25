@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arras Trainer Elite v5</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1b1b1b; font-family: 'Ubuntu', sans-serif; color: white; user-select: none; }
+        canvas { display: block; }
+
+        /* Overlays */
+        #auth-overlay { position: fixed; inset: 0; background: #111; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .box { background: #252525; padding: 40px; border: 2px solid #00B2E1; border-radius: 4px; text-align: center; }
+        
+        /* Professional Admin Console */
+        #admin-panel { 
+            display: none; position: fixed; top: 10px; right: 10px; width: 240px; 
+            background: rgba(20,20,20,0.95); border: 1px solid #ffcc00; padding: 15px; 
+            z-index: 5000; border-radius: 4px; box-shadow: 0 0 20px #000;
+        }
+        .admin-header { font-size: 12px; color: #ffcc00; border-bottom: 1px solid #333; margin-bottom: 10px; padding-bottom: 5px; text-align: center; }
+        .admin-btn { background: #333; color: #eee; border: 1px solid #444; width: 100%; margin: 2px 0; padding: 5px; cursor: pointer; font-size: 10px; }
+        .admin-btn:hover { background: #ffcc00; color: #000; }
+
+        /* HUD */
+        #ui { position: absolute; top: 15px; left: 15px; pointer-events: none; }
+        #stats-container { position: absolute; bottom: 15px; left: 15px; background: rgba(0,0,0,0.4); padding: 10px; border-radius: 4px; }
+        .stat-row { margin: 4px 0; font-size: 11px; display: flex; align-items: center; }
+        .bar-bg { width: 100px; height: 10px; background: #333; margin-left: 10px; position: relative; border: 1px solid #444; }
+        .bar-fill { height: 100%; background: #00B2E1; transition: width 0.3s; }
+        
+        #hp-bar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 300px; height: 12px; background: #222; border: 2px solid #444; }
+        #hp-inner { width: 100%; height: 100%; background: #85e37d; }
+
+        input { background: #111; color: white; border: 1px solid #444; padding: 8px; margin-bottom: 10px; text-align: center; }
+        .key-hint { font-size: 10px; color: #777; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-overlay">
+        <div class="box">
+            <h1 style="color:#00B2E1; letter-spacing: 2px;">ARRAS ELITE</h1>
+            <input type="text" id="nick" placeholder="NICKNAME" maxlength="10"><br>
+            <button onclick="startGame()" style="background:#00B2E1; color:white; border:none; padding:10px 40px; cursor:pointer; font-weight:bold;">ENTER</button>
+        </div>
+    </div>
+
+    <div id="admin-panel">
+        <div class="admin-header">DEVELOPER OVERRIDE</div>
+        <input type="password" id="pass" placeholder="SECRET KEY">
+        <div id="controls" style="display:none">
+            <button class="admin-btn" onclick="points += 50; updateUI();">GIVE 50 POINTS</button>
+            <button class="admin-btn" onclick="god = !god; p.hp = 100;">GOD MODE</button>
+            <button class="admin-btn" onclick="spawnBoss()">SPAWN BOSS</button>
+            <button class="admin-btn" onclick="maxStats()">MAX ALL STATS</button>
+            <button class="admin-btn" onclick="score += 5000; updateUI();">BOOST SCORE</button>
+        </div>
+        <button onclick="document.getElementById('admin-panel').style.display='none'" style="width:100%; margin-top:10px; font-size:9px;">MINIMIZE</button>
+    </div>
+
+    <div id="ui">
+        <div id="name-tag" style="color:#00B2E1; font-weight:bold; font-size: 20px;">---</div>
+        <div>Score: <span id="scr">0</span> | Points: <span id="pts" style="color:#ffcc00">0</span></div>
+        <div class="key-hint">[Y] Admin | [1-8] Classes | [M,R,B,H,P,D] Stats</div>
+    </div>
+
+    <div id="hp-bar"><div id="hp-inner"></div></div>
+
+    <div id="stats-container">
+        <div class="stat-row">SPD [M] <div class="bar-bg"><div id="s-m" class="bar-fill"></div></div></div>
+        <div class="stat-row">RLD [R] <div class="bar-bg"><div id="s-r" class="bar-fill"></div></div></div>
+        <div class="stat-row">DMG [B] <div class="bar-bg"><div id="s-b" class="bar-fill"></div></div></div>
+        <div class="stat-row">HLT [H] <div class="bar-bg"><div id="s-h" class="bar-fill" style="background:#85e37d"></div></div></div>
+        <div class="stat-row">PEN [P] <div class="bar-bg"><div id="s-p" class="bar-fill" style="background:#ff5555"></div></div></div>
+        <div class="stat-row">BDY [D] <div class="bar-bg"><div id="s-d" class="bar-fill" style="background:#ffcc00"></div></div></div>
+    </div>
+
+    <canvas id="ctx"></canvas>
+
+<script>
+const canvas = document.getElementById('ctx');
+const g = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let active = false, god = false, auto = false;
+let score = 0, points = 0, lastFire = 0, lastBoss = 0;
+let stats = {m:0, r:0, b:0, h:0, p:0, d:0};
+const keys = {}, bullets = [], enemies = [], bosses = [];
+const world = 5000;
+
+const TANKS = {
+    1: { n: "Twin", b: [{a:0,x:10,y:-10,w:35,h:18},{a:0,x:10,y:10,w:35,h:18}], s:8, r:200, sz:8 },
+    2: { n: "Sniper", b: [{a:0,x:10,y:0,w:50,h:16}], s:18, r:1000, sz:10 },
+    3: { n: "Machine Gun", b: [{a:0,x:10,y:0,w:35,h:25}], s:9, r:120, sz:7, sp:0.4 },
+    4: { n: "Flank Guard", b: [{a:0,x:10,y:0,w:35,h:20},{a:Math.PI,x:10,y:0,w:35,h:20}], s:8, r:300, sz:8 },
+    5: { n: "Tri-Angle", b: [{a:0,x:10,y:0,w:35,h:20},{a:2.6,x:10,y:0,w:30,h:18},{a:-2.6,x:10,y:0,w:30,h:18}], s:8, r:250, sz:8 },
+    6: { n: "Destroyer", b: [{a:0,x:10,y:0,w:45,h:35}], s:5, r:1500, sz:22 },
+    7: { n: "Penta Shot", b: [{a:0,x:10,y:0,w:40,h:18},{a:0.3,x:10,y:0,w:35,h:18},{a:-0.3,x:10,y:0,w:35,h:18},{a:0.6,x:10,y:0,w:30,h:18},{a:-0.6,x:10,y:0,w:30,h:18}], s:8, r:400, sz:8 },
+    8: { n: "Smasher", b: [], s:0, r:0, sz:0, ram: true }
+};
+
+let tank = TANKS[1];
+const p = { x: 2500, y: 2500, r: 24, hp: 100, maxHp: 100 };
+
+function startGame() {
+    active = true;
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('name-tag').innerText = document.getElementById('nick').value || "Guest";
+}
+
+function updateUI() {
+    document.getElementById('scr').innerText = score;
+    document.getElementById('pts').innerText = points;
+    Object.keys(stats).forEach(k => {
+        document.getElementById('s-'+k).style.width = (stats[k]*10) + "%";
+    });
+}
+
+function maxStats() { stats = {m:10, r:10, b:10, h:10, p:10, d:10}; points = 0; updateUI(); }
+function spawnBoss() { bosses.push({x: p.x+800, y: p.y+800, r: 70, hp: 150, max: 150, lf: 0}); }
+
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if(e.code === 'KeyY') document.getElementById('admin-panel').style.display = 'block';
+    if(e.code === 'Enter' && document.getElementById('admin-panel').style.display === 'block') {
+        if(document.getElementById('pass').value === 'arras123') document.getElementById('controls').style.display = 'block';
+    }
+    if(points > 0) {
+        const smap = {KeyM:'m', KeyR:'r', KeyB:'b', KeyH:'h', KeyP:'p', KeyD:'d'};
+        if(smap[e.code] && stats[smap[e.code]] < 10) { 
+            stats[smap[e.code]]++; points--; 
+            if(smap[e.code] === 'h') { p.maxHp = 100 + (stats.h * 20); p.hp = p.maxHp; }
+            updateUI(); 
+        }
+    }
+    if(TANKS[e.key]) tank = TANKS[e.key];
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+let mx = 0, my = 0;
+window.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+function loop() {
+    if(active) {
+        let spd = (4 + (stats.m * 0.6)) * (tank.ram ? 1.4 : 1);
+        if(keys['KeyW']) p.y -= spd; if(keys['KeyS']) p.y += spd;
+        if(keys['KeyA']) p.x -= spd; if(keys['KeyD']) p.x += spd;
+
+        if(tank.b.length > 0) {
+            let cool = Math.max(50, tank.r - (stats.r * 25));
+            if(Date.now() - lastFire > cool) {
+                let ang = Math.atan2(my - canvas.height/2, mx - canvas.width/2);
+                tank.b.forEach(b => {
+                    let spread = (tank.sp || 0) * (Math.random() - 0.5);
+                    bullets.push({
+                        x: p.x + Math.cos(ang + b.a + spread) * 45,
+                        y: p.y + Math.sin(ang + b.a + spread) * 45,
+                        vx: Math.cos(ang + b.a + spread) * (tank.s + stats.b),
+                        vy: Math.sin(ang + b.a + spread) * (tank.s + stats.b),
+                        r: tank.sz, life: 100, hp: 1 + stats.p, owner: 'p'
+                    });
+                });
+                lastFire = Date.now();
+            }
+        }
+
+        bullets.forEach((b, i) => {
+            b.x += b.vx; b.y += b.vy; b.life--;
+            if(b.life <= 0 || b.hp <= 0) bullets.splice(i, 1);
+        });
+
+        enemies.forEach((en, i) => {
+            let d = Math.hypot(p.x - en.x, p.y - en.y);
+            en.x += (p.x - en.x)/d * 1.8; en.y += (p.y - en.y)/d * 1.8;
+            
+            if(d < p.r + en.r) {
+                if(!god) p.hp -= (0.5 - (stats.d * 0.04));
+                en.h -= (1 + (stats.d * 1.5));
+                if(en.h <= 0) { enemies.splice(i, 1); score += 25; if(score % 100 === 0) points++; updateUI(); }
+            }
+
+            bullets.forEach(b => {
+                if(b.owner === 'p' && Math.hypot(b.x - en.x, b.y - en.y) < en.r + b.r) {
+                    en.h -= (1 + stats.b * 0.5); b.hp--;
+                    if(en.h <= 0) { enemies.splice(i, 1); score += 25; if(score % 100 === 0) points++; updateUI(); }
+                }
+            });
+        });
+
+        bosses.forEach((b, i) => {
+            let d = Math.hypot(p.x - b.x, p.y - b.y);
+            b.x += (p.x - b.x)/d * 1.2; b.y += (p.y - b.y)/d * 1.2;
+            if(Date.now() - b.lf > 800) {
+                for(let j=0; j<12; j++) {
+                    let a = (Math.PI*2/12)*j;
+                    bullets.push({x: b.x, y: b.y, vx: Math.cos(a)*6, vy: Math.sin(a)*6, r: 15, life: 150, hp: 10, owner: 'e'});
+                }
+                b.lf = Date.now();
+            }
+            bullets.forEach(bul => {
+                if(bul.owner === 'p' && Math.hypot(bul.x - b.x, bul.y - b.y) < b.r + bul.r) {
+                    b.hp -= (1 + stats.b * 0.2); bul.hp--;
+                    if(b.hp <= 0) { bosses.splice(i, 1); score += 1000; points += 5; updateUI(); }
+                }
+            });
+        });
+
+        if(score >= lastBoss + 1000) { spawnBoss(); lastBoss += 1000; }
+        if(enemies.length < 15 && Math.random() < 0.04) enemies.push({x: p.x + (Math.random()-0.5)*2000, y: p.y + (Math.random()-0.5)*2000, r: 22, h: 4 + (score/1000)});
+        
+        document.getElementById('hp-inner').style.width = (p.hp/p.maxHp)*100 + "%";
+        if(p.hp <= 0) { p.hp = p.maxHp; score = 0; lastBoss = 0; updateUI(); }
+    }
+
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    if(active) {
+        g.save();
+        g.translate(canvas.width/2 - p.x, canvas.height/2 - p.y);
+        
+        g.strokeStyle = '#222';
+        for(let i=0; i<=world; i+=50) { g.beginPath(); g.moveTo(i,0); g.lineTo(i,world); g.stroke(); g.beginPath(); g.moveTo(0,i); g.lineTo(world,i); g.stroke(); }
+        
+        enemies.forEach(en => { g.fillStyle = '#F14E54'; g.beginPath(); g.arc(en.x, en.y, en.r, 0, Math.PI*2); g.fill(); g.stroke(); });
+        bosses.forEach(b => { g.fillStyle = '#555'; g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI*2); g.fill(); g.strokeStyle = 'red'; g.stroke(); });
+        bullets.forEach(b => { g.fillStyle = b.owner === 'p' ? '#00B2E1' : 'red'; g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI*2); g.fill(); });
+
+        g.save();
+        g.translate(p.x, p.y);
+        let a = Math.atan2(my - canvas.height/2, mx - canvas.width/2);
+        g.fillStyle = '#999';
+        tank.b.forEach(b => { g.save(); g.rotate(a+b.a); g.fillRect(b.x, b.y-b.h/2, b.w, b.h); g.strokeRect(b.x, b.y-b.h/2, b.w, b.h); g.restore(); });
+        g.fillStyle = (tank.ram ? '#ffcc00' : '#00B2E1'); g.beginPath(); g.arc(0, 0, p.r, 0, Math.PI*2); g.fill(); g.stroke();
+        g.restore();
+        g.restore();
+    }
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
