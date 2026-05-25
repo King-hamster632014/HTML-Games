@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arras Trainer Pro v4</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1b1b1b; font-family: 'Segoe UI', sans-serif; color: white; user-select: none; }
+        canvas { display: block; }
+
+        /* Login Screen */
+        #auth-overlay { position: fixed; inset: 0; background: #111; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .box { background: #222; padding: 40px; border: 3px solid #00B2E1; border-radius: 8px; text-align: center; box-shadow: 0 0 30px rgba(0,178,225,0.2); }
+        
+        /* New Admin Console */
+        #admin-panel { 
+            display: none; position: fixed; top: 20px; right: 20px; width: 260px; 
+            background: rgba(15,15,15,0.95); border: 2px solid #ffcc00; padding: 15px; 
+            z-index: 5000; border-radius: 10px; font-family: monospace;
+        }
+        .admin-header { color: #ffcc00; border-bottom: 1px solid #444; padding-bottom: 5px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+        .admin-btn { background: #222; color: #eee; border: 1px solid #555; width: 100%; margin: 4px 0; padding: 6px; cursor: pointer; font-size: 11px; text-transform: uppercase; }
+        .admin-btn:hover { background: #ffcc00; color: #000; }
+
+        /* HUD & Stats */
+        #ui { position: absolute; top: 15px; left: 15px; pointer-events: none; }
+        #stats-menu { position: absolute; bottom: 15px; left: 15px; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 5px; border-left: 5px solid #00B2E1; }
+        .stat-line { margin: 10px 0; font-size: 13px; font-weight: bold; }
+        .bar-bg { display: inline-block; width: 120px; height: 14px; background: #333; margin-left: 10px; vertical-align: middle; position: relative; }
+        .bar-fill { height: 100%; background: #00B2E1; width: 0%; transition: width 0.3s; }
+        
+        #hp-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 350px; height: 15px; background: #333; border-radius: 10px; overflow: hidden; }
+        #hp-inner { width: 100%; height: 100%; background: #85e37d; transition: width 0.1s; }
+
+        input { background: #111; color: white; border: 1px solid #444; padding: 10px; margin: 10px 0; width: 80%; }
+        button#play-btn { background: #00B2E1; color: white; border: none; padding: 12px 30px; cursor: pointer; font-weight: bold; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-overlay">
+        <div class="box">
+            <h1 style="color:#00B2E1; margin:0;">ARRAS TRAINER <span style="font-size: 12px; vertical-align: middle; color: #777;">v4.0</span></h1>
+            <input type="text" id="nick" placeholder="Pilot Name" maxlength="12">
+            <br>
+            <button id="play-btn" onclick="startGame()">ENTER ARENA</button>
+        </div>
+    </div>
+
+    <div id="admin-panel">
+        <div class="admin-header">CORE SYSTEM OVERRIDE</div>
+        <input type="password" id="pass" placeholder="Authorization Key...">
+        <div id="controls" style="display:none">
+            <button class="admin-btn" onclick="points += 100; updateUI();">Add 100 Skill Points</button>
+            <button class="admin-btn" onclick="god = !god; p.hp = 100;">Toggle God Mode</button>
+            <button class="admin-btn" onclick="spawnBoss()">Force Boss Spawn</button>
+            <button class="admin-btn" onclick="enemies.length = 0; bosses.length = 0;">Clear All Bots</button>
+            <button class="admin-btn" onclick="stats = {m:10, r:10, b:10}; updateUI();">Max All Stats</button>
+        </div>
+        <button onclick="document.getElementById('admin-panel').style.display='none'" style="width:100%; margin-top:10px; background:#444; color:white; border:none; padding:5px;">EXIT CONSOLE</button>
+    </div>
+
+    <div id="ui">
+        <div id="name-tag" style="color:#00B2E1; font-size: 24px; font-weight:bold;">---</div>
+        <div style="font-size: 18px;">Score: <span id="scr">0</span> | Points: <span id="pts" style="color:#ffcc00">0</span></div>
+        <div style="font-size: 12px; color: #aaa; margin-top: 5px;">Press [Y] for Admin | [1-5] for Classes</div>
+    </div>
+
+    <div id="hp-bar"><div id="hp-inner"></div></div>
+
+    <div id="stats-menu">
+        <div class="stat-line">[M] MOVEMENT <div class="bar-bg"><div id="m-spd" class="bar-fill"></div></div></div>
+        <div class="stat-line">[R] RELOAD <div class="bar-bg"><div id="m-rld" class="bar-fill"></div></div></div>
+        <div class="stat-line">[B] BULLETS <div class="bar-bg"><div id="m-blt" class="bar-fill"></div></div></div>
+    </div>
+
+    <canvas id="ctx"></canvas>
+
+<script>
+const canvas = document.getElementById('ctx');
+const g = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let active = false, god = false, auto = false;
+let score = 0, points = 0, lastFire = 0, lastBossScore = 0, stats = {m:0, r:0, b:0};
+const keys = {}, bullets = [], enemies = [], bosses = [];
+const world = 5000;
+
+const TANKS = {
+    1: { n: "Twin", b: [{a:0,x:10,y:-10,w:35,h:20},{a:0,x:10,y:10,w:35,h:20}], s:8, r:200, sz:8 },
+    2: { n: "Sniper", b: [{a:0,x:10,y:0,w:50,h:18}], s:18, r:1000, sz:10 },
+    3: { n: "Destroyer", b: [{a:0,x:10,y:0,w:45,h:35}], s:5, r:1600, sz:24 },
+    4: { n: "Octo-Tank", b: Array.from({length:8}, (_,i)=>({a:(Math.PI/4)*i,x:10,y:0,w:30,h:18})), s:7, r:400, sz:8 },
+    5: { n: "Mega-Smasher", b: [], s:0, r:0, sz:0, bodyDamage: 5 }
+};
+let tank = TANKS[1];
+const p = { x: 2500, y: 2500, r: 24, hp: 100 };
+
+function startGame() {
+    active = true;
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('name-tag').innerText = document.getElementById('nick').value || "Guest";
+    updateUI();
+}
+
+function spawnBoss() {
+    bosses.push({x: p.x + (Math.random() < 0.5 ? 600 : -600), y: p.y + (Math.random() < 0.5 ? 600 : -600), r: 70, hp: 100, max: 100, lf: 0});
+}
+
+function updateUI() {
+    document.getElementById('scr').innerText = score;
+    document.getElementById('pts').innerText = points;
+    document.getElementById('m-spd').style.width = (stats.m*10) + "%";
+    document.getElementById('m-rld').style.width = (stats.r*10) + "%";
+    document.getElementById('m-blt').style.width = (stats.b*10) + "%";
+}
+
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if(e.code === 'KeyY') document.getElementById('admin-panel').style.display = 'block';
+    if(e.code === 'Enter' && document.getElementById('admin-panel').style.display === 'block') {
+        if(document.getElementById('pass').value === 'arras123') document.getElementById('controls').style.display = 'block';
+    }
+    if(e.code === 'KeyE') auto = !auto;
+    if(points > 0) {
+        if(e.code === 'KeyM' && stats.m < 10) { stats.m++; points--; }
+        if(e.code === 'KeyR' && stats.r < 10) { stats.r++; points--; }
+        if(e.code === 'KeyB' && stats.b < 10) { stats.b++; points--; }
+        updateUI();
+    }
+    if(TANKS[e.key]) tank = TANKS[e.key];
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+let mx = 0, my = 0;
+window.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+function loop() {
+    if(active) {
+        // Player Movement
+        let s = (tank.n === "Mega-Smasher" ? 7 : 4.5) + (stats.m * 0.8);
+        if(keys['KeyW']) p.y -= s; if(keys['KeyS']) p.y += s;
+        if(keys['KeyA']) p.x -= s; if(keys['KeyD']) p.x += s;
+
+        // Auto-fire / Shooting
+        if(tank.b.length > 0 && (auto || keys['Space'])) {
+            let cool = Math.max(60, tank.r - (stats.r * 28));
+            if(Date.now() - lastFire > cool) {
+                let ang = Math.atan2(my - canvas.height/2, mx - canvas.width/2);
+                tank.b.forEach(b => {
+                    bullets.push({x: p.x+Math.cos(ang+b.a)*45, y: p.y+Math.sin(ang+b.a)*45, vx: Math.cos(ang+b.a)*(tank.s+stats.b), vy: Math.sin(ang+b.a)*(tank.s+stats.b), r: tank.sz, life: 110, owner: 'p'});
+                });
+                lastFire = Date.now();
+            }
+        }
+
+        // Bullet Physics
+        bullets.forEach((b, i) => {
+            b.x += b.vx; b.y += b.vy; b.life--;
+            if(b.life <= 0) bullets.splice(i, 1);
+        });
+
+        // Boss Spawn Check
+        if(score >= lastBossScore + 1000) {
+            spawnBoss();
+            lastBossScore += 1000;
+        }
+
+        // Enemy AI
+        enemies.forEach((en, i) => {
+            let d = Math.hypot(p.x - en.x, p.y - en.y);
+            en.x += (p.x - en.x)/d * 1.8; en.y += (p.y - en.y)/d * 1.8;
+            if(d < p.r + en.r && !god) { 
+                p.hp -= (tank.n === "Mega-Smasher" ? 0.1 : 0.8); 
+                if(tank.n === "Mega-Smasher") { en.h -= 1; if(en.h <= 0) { enemies.splice(i, 1); score += 20; if(score%100===0) points++; updateUI(); }}
+                if(p.hp <= 0) { p.hp=100; score=0; lastBossScore=0; updateUI(); }
+            }
+            bullets.forEach((b, bi) => {
+                if(b.owner === 'p' && Math.hypot(b.x - en.x, b.y - en.y) < en.r + b.r) {
+                    en.h--; bullets.splice(bi, 1);
+                    if(en.h <= 0) { enemies.splice(i, 1); score += 20; if(score%100===0) points++; updateUI(); }
+                }
+            });
+        });
+
+        // Boss Logic
+        bosses.forEach((b, i) => {
+            let d = Math.hypot(p.x - b.x, p.y - b.y);
+            b.x += (p.x - b.x)/d * 1.2; b.y += (p.y - b.y)/d * 1.2;
+            if(Date.now() - b.lf > 800) {
+                for(let j=0; j<12; j++) {
+                    let a = (Math.PI*2/12)*j;
+                    bullets.push({x: b.x, y: b.y, vx: Math.cos(a)*6, vy: Math.sin(a)*6, r: 15, life: 180, owner: 'b'});
+                }
+                b.lf = Date.now();
+            }
+            bullets.forEach((bul, bi) => {
+                if(bul.owner === 'p' && Math.hypot(bul.x - b.x, bul.y - b.y) < b.r + bul.r) {
+                    b.hp--; bullets.splice(bi, 1);
+                    if(b.hp <= 0) { bosses.splice(i, 1); score += 500; points += 10; updateUI(); }
+                }
+            });
+        });
+
+        if(enemies.length < 15 && Math.random() < 0.04) enemies.push({x: p.x + (Math.random()-0.5)*1800, y: p.y + (Math.random()-0.5)*1800, r: 22, h: 4});
+        document.getElementById('hp-inner').style.width = p.hp + "%";
+    }
+
+    // Rendering
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    if(active) {
+        g.save();
+        g.translate(canvas.width/2 - p.x, canvas.height/2 - p.y);
+        
+        // Grid
+        g.strokeStyle = '#252525'; g.lineWidth = 2;
+        for(let i=0; i<=world; i+=50) { g.beginPath(); g.moveTo(i,0); g.lineTo(i,world); g.stroke(); g.beginPath(); g.moveTo(0,i); g.lineTo(world,i); g.stroke(); }
+        
+        enemies.forEach(en => { g.fillStyle = '#F14E54'; g.beginPath(); g.arc(en.x, en.y, en.r, 0, Math.PI*2); g.fill(); g.strokeStyle="#555"; g.stroke(); });
+        bosses.forEach(b => { g.fillStyle = '#444'; g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI*2); g.fill(); g.strokeStyle = '#ffcc00'; g.lineWidth=4; g.stroke(); });
+        bullets.forEach(b => { g.fillStyle = b.owner === 'p' ? '#00B2E1' : '#ff5555'; g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI*2); g.fill(); });
+
+        // Player Render
+        g.save();
+        g.translate(p.x, p.y);
+        let a = Math.atan2(my - canvas.height/2, mx - canvas.width/2);
+        g.fillStyle = '#999'; g.strokeStyle = '#555'; g.lineWidth = 3;
+        tank.b.forEach(b => { g.save(); g.rotate(a+b.a); g.fillRect(b.x, b.y-b.h/2, b.w, b.h); g.strokeRect(b.x, b.y-b.h/2, b.w, b.h); g.restore(); });
+        g.fillStyle = p.color = (tank.n === "Mega-Smasher" ? '#ffcc00' : '#00B2E1');
+        g.beginPath(); g.arc(0, 0, p.r, 0, Math.PI*2); g.fill(); g.stroke();
+        g.restore();
+        g.restore();
+    }
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
