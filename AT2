@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arras.io Trainer - Classes & Camera</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #ui { position: absolute; top: 15px; left: 15px; color: white; pointer-events: none; text-shadow: 2px 2px 4px #000; }
+        kbd { background: #444; padding: 2px 5px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h2>Arras Trainer</h2>
+        <p>Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Aim: Mouse</p>
+        <p>Switch Class: <kbd>1</kbd> Twin | <kbd>2</kbd> Sniper | <kbd>3</kbd> Flank Guard</p>
+        <p id="class-name">Current Class: Twin</p>
+        <p id="score">Score: 0</p>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const classEl = document.getElementById('class-name');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let score = 0;
+const keys = {};
+const bullets = [];
+const enemies = [];
+const worldSize = 3000; // Total map size
+
+// Tank Class Definitions
+const CLASSES = {
+    twin: { name: "Twin", barrels: [{a: 0, x: 10, y: -10, w: 35, h: 20}, {a: 0, x: 10, y: 10, w: 35, h: 20}], bSpeed: 8, reload: 150 },
+    sniper: { name: "Sniper", barrels: [{a: 0, x: 10, y: 0, w: 50, h: 18}], bSpeed: 14, reload: 800 },
+    flank: { name: "Flank Guard", barrels: [{a: 0, x: 10, y: 0, w: 35, h: 20}, {a: Math.PI, x: 10, y: 0, w: 35, h: 20}], bSpeed: 8, reload: 300 }
+};
+
+let currentClass = CLASSES.twin;
+let lastFire = 0;
+
+const player = {
+    x: worldSize / 2,
+    y: worldSize / 2,
+    radius: 22,
+    color: '#00B2E1'
+};
+
+// Controls
+window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if(e.key === '1') { currentClass = CLASSES.twin; classEl.innerText = "Current Class: Twin"; }
+    if(e.key === '2') { currentClass = CLASSES.sniper; classEl.innerText = "Current Class: Sniper"; }
+    if(e.key === '3') { currentClass = CLASSES.flank; classEl.innerText = "Current Class: Flank Guard"; }
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+let mouseX = 0, mouseY = 0, isMouseDown = false;
+window.addEventListener('mousedown', () => isMouseDown = true);
+window.addEventListener('mouseup', () => isMouseDown = false);
+window.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+
+function shoot() {
+    const now = Date.now();
+    if (now - lastFire < currentClass.reload) return;
+    
+    const angleToMouse = Math.atan2(mouseY - canvas.height/2, mouseX - canvas.width/2);
+    
+    currentClass.barrels.forEach(b => {
+        const finalAngle = angleToMouse + b.a;
+        bullets.push({
+            x: player.x + Math.cos(finalAngle) * 40,
+            y: player.y + Math.sin(finalAngle) * 40,
+            vx: Math.cos(finalAngle) * currentClass.bSpeed,
+            vy: Math.sin(finalAngle) * currentClass.bSpeed,
+            radius: currentClass.name === "Sniper" ? 10 : 8,
+            life: 100
+        });
+    });
+    lastFire = now;
+}
+
+function spawnEnemy() {
+    if (enemies.length < 15 && Math.random() < 0.02) {
+        enemies.push({
+            x: player.x + (Math.random() - 0.5) * 1000,
+            y: player.y + (Math.random() - 0.5) * 1000,
+            radius: 20,
+            health: 3
+        });
+    }
+}
+
+function update() {
+    if (keys['w']) player.y -= 4;
+    if (keys['s']) player.y += 4;
+    if (keys['a']) player.x -= 4;
+    if (keys['d']) player.x += 4;
+    
+    if (isMouseDown) shoot();
+
+    bullets.forEach((b, i) => {
+        b.x += b.vx; b.y += b.vy; b.life--;
+        if (b.life <= 0) bullets.splice(i, 1);
+    });
+
+    enemies.forEach((en, i) => {
+        const dx = player.x - en.x;
+        const dy = player.y - en.y;
+        const dist = Math.hypot(dx, dy);
+        en.x += (dx / dist) * 1.5;
+        en.y += (dy / dist) * 1.5;
+
+        bullets.forEach((b, bi) => {
+            if (Math.hypot(b.x - en.x, b.y - en.y) < en.radius + b.radius) {
+                en.health--;
+                bullets.splice(bi, 1);
+                if (en.health <= 0) {
+                    enemies.splice(i, 1);
+                    score += 25;
+                    scoreEl.innerText = `Score: ${score}`;
+                }
+            }
+        });
+    });
+    spawnEnemy();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    // CAMERA FOLLOW: Translate view to center on player
+    ctx.translate(canvas.width/2 - player.x, canvas.height/2 - player.y);
+
+    // Draw Grid
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    for(let i=0; i<=worldSize; i+=50) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, worldSize); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(worldSize, i); ctx.stroke();
+    }
+
+    // Draw Enemies
+    enemies.forEach(en => {
+        ctx.fillStyle = '#F14E54';
+        ctx.beginPath(); ctx.arc(en.x, en.y, en.radius, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 3; ctx.stroke();
+    });
+
+    // Draw Bullets
+    ctx.fillStyle = '#EEE';
+    bullets.forEach(b => {
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
+    });
+
+    // Draw Player
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    const angle = Math.atan2(mouseY - canvas.height/2, mouseX - canvas.width/2);
+    
+    // Draw Class Barrels
+    ctx.fillStyle = '#999';
+    ctx.strokeStyle = '#555';
+    currentClass.barrels.forEach(b => {
+        ctx.save();
+        ctx.rotate(angle + b.a);
+        ctx.fillRect(b.x, b.y - b.h/2, b.w, b.h);
+        ctx.strokeRect(b.x, b.y - b.h/2, b.w, b.h);
+        ctx.restore();
+    });
+
+    // Draw Body
+    ctx.beginPath(); ctx.arc(0, 0, player.radius, 0, Math.PI*2);
+    ctx.fillStyle = player.color; ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore(); // End Camera
+    requestAnimationFrame(draw);
+}
+
+setInterval(update, 1000/60);
+draw();
+
+window.onresize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+};
+</script>
+</body>
+</html>swwsdw
