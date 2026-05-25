@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text RPG Adventure</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        #game-container {
+            background-color: #2a2a2a;
+            width: 600px;
+            padding: 20px;
+            border: 2px solid #555;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+        }
+        h1 {
+            text-align: center;
+            color: #f39c12;
+            margin-top: 0;
+        }
+        #stats {
+            display: flex;
+            justify-content: space-between;
+            background-color: #111;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .stat-group { display: flex; gap: 15px; }
+        .stat { color: #3498db; }
+        .val { color: #fff; }
+        #text-box {
+            background-color: #000;
+            height: 150px;
+            padding: 15px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+        #monster-stats {
+            display: none;
+            justify-content: space-between;
+            background-color: #421;
+            padding: 10px;
+            border: 1px solid #a33;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 15px;
+            background-color: #2c3e50;
+            color: white;
+            border: 2px solid #34495e;
+            border-radius: 5px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: #34495e; }
+        button:active { background-color: #1abc9c; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>🗡️ Realm of Shadows</h1>
+        
+        <div id="stats">
+            <div class="stat-group">
+                <span><span class="stat">HP:</span> <span id="healthText" class="val">100</span></span>
+                <span><span class="stat">Gold:</span> <span id="goldText" class="val">50</span></span>
+            </div>
+            <div class="stat-group">
+                <span><span class="stat">Weapon:</span> <span id="weaponText" class="val">Stick</span></span>
+                <span><span class="stat">Level:</span> <span id="levelText" class="val">1</span></span>
+            </div>
+        </div>
+
+        <div id="monster-stats">
+            <span>Enemy: <span id="monsterName"></span></span>
+            <span>HP: <span id="monsterHealth"></span></span>
+        </div>
+
+        <div id="text-box">
+            Welcome to the Realm of Shadows. You must defeat the Dragon that terrorizes the land. You are currently in the town square.
+        </div>
+
+        <div id="controls">
+            <button id="button1">Go to Store</button>
+            <button id="button2">Go to Cave</button>
+            <button id="button3">Fight Dragon</button>
+        </div>
+    </div>
+
+    <script>
+        // Game Variables
+        let health = 100;
+        let maxHealth = 100;
+        let gold = 50;
+        let level = 1;
+        let currentWeapon = 0;
+        let fighting;
+        let monsterHealth;
+
+        // HTML Elements
+        const button1 = document.querySelector("#button1");
+        const button2 = document.querySelector("#button2");
+        const button3 = document.querySelector("#button3");
+        const text = document.querySelector("#text-box");
+        const healthText = document.querySelector("#healthText");
+        const goldText = document.querySelector("#goldText");
+        const weaponText = document.querySelector("#weaponText");
+        const levelText = document.querySelector("#levelText");
+        const monsterStats = document.querySelector("#monster-stats");
+        const monsterNameText = document.querySelector("#monsterName");
+        const monsterHealthText = document.querySelector("#monsterHealth");
+
+        // Game Data
+        const weapons = [
+            { name: "Stick", power: 5 },
+            { name: "Dagger", power: 15 },
+            { name: "Iron Sword", power: 30 },
+            { name: "Magic Axe", power: 50 }
+        ];
+
+        const monsters = [
+            { name: "Slime", level: 2, health: 30, damage: 10 },
+            { name: "Goblin", level: 5, health: 60, damage: 20 },
+            { name: "Dragon", level: 20, health: 300, damage: 50 }
+        ];
+
+        const locations = [
+            {
+                name: "town square",
+                "button text": ["Go to Store", "Go to Cave", "Fight Dragon"],
+                "button functions": [goStore, goCave, fightDragon],
+                text: "You are in the town square. People are bustling around. You see a sign that says 'Store'."
+            },
+            {
+                name: "store",
+                "button text": ["Buy 10 HP (10 Gold)", "Upgrade Weapon (30 Gold)", "Leave Store"],
+                "button functions": [buyHealth, buyWeapon, goTown],
+                text: "You enter the store. The merchant smiles at you."
+            },
+            {
+                name: "cave",
+                "button text": ["Fight Slime", "Fight Goblin", "Return to Town"],
+                "button functions": [fightSlime, fightGoblin, goTown],
+                text: "You enter a dark cave. You hear monsters rustling in the shadows."
+            },
+            {
+                name: "fight",
+                "button text": ["Attack", "Dodge", "Run"],
+                "button functions": [attack, dodge, goTown],
+                text: "You are in combat!"
+            },
+            {
+                name: "kill monster",
+                "button text": ["Return to Town", "Return to Town", "Return to Town"],
+                "button functions": [goTown, goTown, goTown],
+                text: "The monster dies. You gain experience and find some gold."
+            },
+            {
+                name: "lose",
+                "button text": ["REPLAY?", "REPLAY?", "REPLAY?"],
+                "button functions": [restart, restart, restart],
+                text: "You have been defeated. The shadows consume you. &#x2620;"
+            },
+            {
+                name: "win",
+                "button text": ["REPLAY?", "REPLAY?", "REPLAY?"],
+                "button functions": [restart, restart, restart],
+                text: "You defeated the dragon! You have saved the realm! &#x1F3C6;"
+            }
+        ];
+
+        // Initialization
+        button1.onclick = goStore;
+        button2.onclick = goCave;
+        button3.onclick = fightDragon;
+
+        // Core Functions
+        function update(location) {
+            monsterStats.style.display = "none";
+            button1.innerText = location["button text"][0];
+            button2.innerText = location["button text"][1];
+            button3.innerText = location["button text"][2];
+            button1.onclick = location["button functions"][0];
+            button2.onclick = location["button functions"][1];
+            button3.onclick = location["button functions"][2];
+            text.innerHTML = location.text;
+        }
+
+        function updateStats() {
+            healthText.innerText = health;
+            goldText.innerText = gold;
+            weaponText.innerText = weapons[currentWeapon].name;
+            levelText.innerText = level;
+        }
+
+        function logMessage(msg) {
+            text.innerHTML += "<br><br>> " + msg;
+            text.scrollTop = text.scrollHeight;
+        }
+
+        // Navigation
+        function goTown() { update(locations[0]); }
+        function goStore() { update(locations[1]); }
+        function goCave() { update(locations[2]); }
+
+        // Store Functions
+        function buyHealth() {
+            if (gold >= 10) {
+                gold -= 10;
+                health = Math.min(health + 20, maxHealth);
+                updateStats();
+                logMessage("You bought a health potion. Recovered 20 HP.");
+            } else {
+                logMessage("You do not have enough gold.");
+            }
+        }
+
+        function buyWeapon() {
+            if (currentWeapon < weapons.length - 1) {
+                if (gold >= 30) {
+                    gold -= 30;
+                    currentWeapon++;
+                    updateStats();
+                    logMessage("You upgraded your weapon to a " + weapons[currentWeapon].name + "!");
+                } else {
+                    logMessage("You do not have enough gold to upgrade your weapon.");
+                }
+            } else {
+                logMessage("You already have the most powerful weapon!");
+            }
+        }
+
+        // Combat Triggers
+        function fightSlime() { fighting = 0; goFight(); }
+        function fightGoblin() { fighting = 1; goFight(); }
+        function fightDragon() { fighting = 2; goFight(); }
+
+        function goFight() {
+            update(locations[3]);
+            monsterHealth = monsters[fighting].health;
+            monsterStats.style.display = "flex";
+            monsterNameText.innerText = monsters[fighting].name;
+            monsterHealthText.innerText = monsterHealth;
+            logMessage("A wild " + monsters[fighting].name + " appears!");
+        }
+
+        // Combat Mechanics
+        function attack() {
+            let playerDamage = weapons[currentWeapon].power + Math.floor(Math.random() * (level * 5));
+            let enemyDamage = monsters[fighting].damage + Math.floor(Math.random() * 5);
+            
+            monsterHealth -= playerDamage;
+            health -= enemyDamage;
+            
+            monsterHealthText.innerText = Math.max(0, monsterHealth);
+            healthText.innerText = Math.max(0, health);
+            
+            logMessage("You hit the " + monsters[fighting].name + " for " + playerDamage + " damage.");
+            logMessage("The " + monsters[fighting].name + " attacks you for " + enemyDamage + " damage.");
+
+            if (health <= 0) {
+                lose();
+            } else if (monsterHealth <= 0) {
+                fighting === 2 ? winGame() : defeatMonster();
+            }
+        }
+
+        function dodge() {
+            logMessage("You dodge the attack from the " + monsters[fighting].name + ".");
+        }
+
+        function defeatMonster() {
+            let goldWon = Math.floor(monsters[fighting].level * 6.7);
+            gold += goldWon;
+            level++;
+            maxHealth += 10;
+            health = maxHealth;
+            updateStats();
+            update(locations[4]);
+            logMessage("You earned " + goldWon + " gold and leveled up! Health restored.");
+        }
+
+        // End Game States
+        function lose() { update(locations[5]); }
+        function winGame() { update(locations[6]); }
+
+        function restart() {
+            health = 100;
+            maxHealth = 100;
+            gold = 50;
+            level = 1;
+            currentWeapon = 0;
+            updateStats();
+            goTown();
+        }
+    </script>
+</body>
+</html>
