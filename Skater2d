@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>skatez 2D</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #111; 
+            color: #0ff; 
+            font-family: 'Courier New', Courier, monospace; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            overflow: hidden; 
+            user-select: none;
+        }
+        canvas { 
+            background: #222; 
+            border: 2px solid #00ffcc; 
+            box-shadow: 0 0 15px #00ffcc; 
+            max-width: 100%;
+        }
+        #ui { 
+            position: absolute; 
+            top: 20px; 
+            text-align: center; 
+            pointer-events: none; 
+        }
+        h1 { margin: 0; letter-spacing: 4px; text-transform: uppercase; text-shadow: 0 0 10px #00ffcc; }
+        p { color: #ff00ff; margin: 5px 0; }
+        h2 { color: #fff; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>skatez 2D</h1>
+        <p>SPACEBAR or TAP to Jump</p>
+        <h2 id="scoreBoard">Score: 0</h2>
+    </div>
+    
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreBoard = document.getElementById('scoreBoard');
+
+        // Game variables
+        let score = 0;
+        let gameSpeed = 6;
+        let isGameOver = false;
+        let frames = 0;
+
+        // Player (The Skateboard)
+        const player = {
+            x: 100,
+            y: 300,
+            width: 50,
+            height: 10,
+            dy: 0,
+            jumpForce: -12,
+            grounded: false
+        };
+
+        const gravity = 0.6;
+        let obstacles = [];
+
+        // Input Listeners
+        window.addEventListener('keydown', (e) => {
+            if ((e.code === 'Space' || e.code === 'ArrowUp') && player.grounded && !isGameOver) {
+                Jump();
+            }
+            if (e.code === 'Space' && isGameOver) {
+                Reset();
+            }
+        });
+        
+        window.addEventListener('touchstart', () => {
+            if (isGameOver) Reset();
+            else if (player.grounded) Jump();
+        });
+        
+        canvas.addEventListener('mousedown', () => {
+            if (isGameOver) Reset();
+            else if (player.grounded) Jump();
+        });
+
+        function Jump() {
+            player.dy = player.jumpForce;
+            player.grounded = false;
+        }
+
+        function Reset() {
+            isGameOver = false;
+            score = 0;
+            gameSpeed = 6;
+            obstacles = [];
+            player.y = 300;
+            player.dy = 0;
+            frames = 0;
+            Update();
+        }
+
+        function SpawnObstacle() {
+            let size = Math.random() * 30 + 30; // Random height
+            let obstacle = {
+                x: canvas.width,
+                y: 320 - size,
+                width: 30,
+                height: size
+            };
+            obstacles.push(obstacle);
+        }
+
+        // Main Game Loop
+        function Update() {
+            if (isGameOver) return;
+            requestAnimationFrame(Update);
+            frames++;
+
+            // Clear screen
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Ground
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 320, canvas.width, 80);
+            
+            // Draw Grid lines on ground for speed effect
+            ctx.fillStyle = '#ff0055';
+            for(let i = 0; i < canvas.width; i+= 50) {
+                let offset = (i - (frames * gameSpeed) % 50);
+                ctx.fillRect(offset, 320, 2, 80);
+            }
+
+            // Player Physics
+            player.dy += gravity;
+            player.y += player.dy;
+
+            // Floor collision
+            if (player.y + player.height >= 320) {
+                player.y = 320 - player.height;
+                player.dy = 0;
+                player.grounded = true;
+            }
+
+            // Draw Player (Deck + Wheels)
+            ctx.fillStyle = '#00ffcc'; // Deck
+            ctx.fillRect(player.x, player.y, player.width, player.height); 
+            ctx.fillStyle = '#fff'; // Wheels
+            ctx.beginPath();
+            ctx.arc(player.x + 10, player.y + 10 + 4, 6, 0, Math.PI * 2);
+            ctx.arc(player.x + 40, player.y + 10 + 4, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Obstacle Logic
+            if (frames % Math.floor(90 - gameSpeed) === 0) {
+                SpawnObstacle();
+            }
+
+            for (let i = 0; i < obstacles.length; i++) {
+                let obs = obstacles[i];
+                obs.x -= gameSpeed;
+
+                // Draw Obstacle
+                ctx.fillStyle = '#ff00ff';
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+
+                // Collision Detection
+                if (
+                    player.x < obs.x + obs.width &&
+                    player.x + player.width > obs.x &&
+                    player.y < obs.y + obs.height &&
+                    player.y + player.height > obs.y
+                ) {
+                    // Game Over State
+                    isGameOver = true;
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    ctx.fillStyle = '#ff0055';
+                    ctx.font = 'bold 48px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('WIPEOUT!', canvas.width/2, canvas.height/2 - 20);
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '24px monospace';
+                    ctx.fillText('Click or Press SPACE to restart', canvas.width/2, canvas.height/2 + 20);
+                    ctx.textAlign = 'left'; // Reset
+                }
+            }
+
+            // Cleanup old obstacles
+            obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+
+            // Score and Speed up
+            score++;
+            if (score % 500 === 0) gameSpeed += 0.5;
+            scoreBoard.innerText = `Score: ${Math.floor(score / 10)}`;
+        }
+
+        Update(); // Start game
+    </script>
+</body>
+</html>    
