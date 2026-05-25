@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arras.io Trainer</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
+        canvas { display: block; background-color: #1a1a1a; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>Arras Trainer</h1>
+        <p>WASD to Move | Click to Shoot</p>
+        <p id="score">Score: 0</p>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let score = 0;
+const keys = {};
+const bullets = [];
+const enemies = [];
+
+// Game Constants
+const PLAYER_SPEED = 3;
+const BULLET_SPEED = 7;
+const ENEMY_SPAWN_RATE = 0.01;
+
+// Player Object
+const player = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    radius: 20,
+    angle: 0,
+    color: '#00B2E1'
+};
+
+// Input Listeners
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+window.addEventListener('mousedown', shoot);
+let mouseX = 0, mouseY = 0;
+window.addEventListener('mousemove', e => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+});
+
+function shoot() {
+    const dx = mouseX - player.x;
+    const dy = mouseY - player.y;
+    const angle = Math.atan2(dy, dx);
+    
+    bullets.push({
+        x: player.x + Math.cos(angle) * 30,
+        y: player.y + Math.sin(angle) * 30,
+        vx: Math.cos(angle) * BULLET_SPEED,
+        vy: Math.sin(angle) * BULLET_SPEED,
+        radius: 8,
+        owner: 'player'
+    });
+}
+
+function spawnEnemy() {
+    if (Math.random() < ENEMY_SPAWN_RATE) {
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        if(side === 0) { x = -50; y = Math.random() * canvas.height; }
+        else if(side === 1) { x = canvas.width + 50; y = Math.random() * canvas.height; }
+        else if(side === 2) { x = Math.random() * canvas.width; y = -50; }
+        else { x = Math.random() * canvas.width; y = canvas.height + 50; }
+        
+        enemies.push({ x, y, radius: 20, color: '#F14E54', health: 2 });
+    }
+}
+
+function update() {
+    // Player Movement
+    if (keys['w']) player.y -= PLAYER_SPEED;
+    if (keys['s']) player.y += PLAYER_SPEED;
+    if (keys['a']) player.x -= PLAYER_SPEED;
+    if (keys['d']) player.x += PLAYER_SPEED;
+
+    // Bullets update
+    bullets.forEach((b, i) => {
+        b.x += b.vx;
+        b.y += b.vy;
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            bullets.splice(i, 1);
+        }
+    });
+
+    // Enemies update
+    enemies.forEach((en, i) => {
+        const dx = player.x - en.x;
+        const dy = player.y - en.y;
+        const angle = Math.atan2(dy, dx);
+        en.x += Math.cos(angle) * 1.5;
+        en.y += Math.sin(angle) * 1.5;
+
+        // Collision with bullets
+        bullets.forEach((b, bi) => {
+            const dist = Math.hypot(b.x - en.x, b.y - en.y);
+            if (dist < en.radius + b.radius) {
+                en.health--;
+                bullets.splice(bi, 1);
+                if (en.health <= 0) {
+                    enemies.splice(i, 1);
+                    score += 10;
+                    scoreEl.innerText = `Score: ${score}`;
+                }
+            }
+        });
+    });
+
+    spawnEnemy();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Grid (Arras style)
+    ctx.strokeStyle = '#333';
+    for(let i=0; i<canvas.width; i+=50) {
+        ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke();
+    }
+    for(let i=0; i<canvas.height; i+=50) {
+        ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width,i); ctx.stroke();
+    }
+
+    // Draw Player
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    const angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+    ctx.rotate(angle);
+    // Barrel
+    ctx.fillStyle = '#999';
+    ctx.fillRect(10, -10, 30, 20);
+    // Body
+    ctx.beginPath();
+    ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+    ctx.fillStyle = player.color;
+    ctx.fill();
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.restore();
+
+    // Draw Enemies
+    enemies.forEach(en => {
+        ctx.beginPath();
+        ctx.arc(en.x, en.y, en.radius, 0, Math.PI * 2);
+        ctx.fillStyle = en.color;
+        ctx.fill();
+        ctx.stroke();
+    });
+
+    // Draw Bullets
+    bullets.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#EEE';
+        ctx.fill();
+    });
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
+No definitions available.
