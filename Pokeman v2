@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Better Pokémon Game</title>
+
+<style>
+body {
+  margin: 0;
+  background: #222;
+  color: white;
+  font-family: Arial;
+  text-align: center;
+}
+
+#game {
+  width: 480px;
+  height: 480px;
+  margin: 20px auto;
+  display: grid;
+  grid-template-columns: repeat(12, 40px);
+  grid-template-rows: repeat(12, 40px);
+  border: 4px solid black;
+}
+
+.tile {
+  width: 40px;
+  height: 40px;
+}
+
+.grass { background: #3fa34d; }
+.path { background: #c2b280; }
+
+.player {
+  background: blue;
+}
+
+#battle {
+  display: none;
+  width: 480px;
+  margin: auto;
+  background: #111;
+  padding: 10px;
+}
+
+.bar {
+  height: 10px;
+  background: red;
+  margin: 5px 0;
+}
+
+#log {
+  height: 60px;
+  overflow-y: auto;
+  background: #000;
+  padding: 5px;
+  font-size: 12px;
+}
+
+button {
+  padding: 10px;
+  margin: 5px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Better Pokémon Game</h2>
+
+<div id="game"></div>
+
+<div id="battle">
+  <h3 id="enemyName"></h3>
+  Enemy HP:
+  <div class="bar" id="enemyBar"></div>
+
+  Your HP:
+  <div class="bar" id="playerBar"></div>
+
+  <div id="log"></div>
+
+  <button onclick="attack()">Attack</button>
+  <button onclick="run()">Run</button>
+</div>
+
+<script>
+const game = document.getElementById("game");
+const battleUI = document.getElementById("battle");
+const logBox = document.getElementById("log");
+
+let map = [];
+let size = 12;
+let playerPos = 66;
+
+let playerHP = 100;
+let maxHP = 100;
+
+let enemyHP = 0;
+let enemyMaxHP = 0;
+let enemyName = "";
+
+let inBattle = false;
+
+// Generate map
+for (let i = 0; i < size * size; i++) {
+  let tile = document.createElement("div");
+  tile.classList.add("tile");
+
+  // random grass
+  if (Math.random() < 0.4) {
+    tile.classList.add("grass");
+    map.push("grass");
+  } else {
+    tile.classList.add("path");
+    map.push("path");
+  }
+
+  game.appendChild(tile);
+}
+
+function draw() {
+  [...game.children].forEach((tile, i) => {
+    tile.classList.remove("player");
+    if (i === playerPos) tile.classList.add("player");
+  });
+}
+
+draw();
+
+// Movement
+document.addEventListener("keydown", e => {
+  if (inBattle) return;
+
+  let row = Math.floor(playerPos / size);
+  let col = playerPos % size;
+
+  if (e.key === "ArrowUp" && row > 0) playerPos -= size;
+  if (e.key === "ArrowDown" && row < size - 1) playerPos += size;
+  if (e.key === "ArrowLeft" && col > 0) playerPos -= 1;
+  if (e.key === "ArrowRight" && col < size - 1) playerPos += 1;
+
+  draw();
+
+  // Encounter only in grass
+  if (map[playerPos] === "grass" && Math.random() < 0.25) {
+    startBattle();
+  }
+});
+
+// Battle system
+const enemies = [
+  { name: "Sparkit", hp: 40 },
+  { name: "Flameling", hp: 50 },
+  { name: "Leafy", hp: 45 }
+];
+
+function log(text) {
+  logBox.innerHTML += text + "<br>";
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function startBattle() {
+  inBattle = true;
+  battleUI.style.display = "block";
+  game.style.display = "none";
+
+  let e = enemies[Math.floor(Math.random() * enemies.length)];
+  enemyName = e.name;
+  enemyHP = e.hp;
+  enemyMaxHP = e.hp;
+
+  logBox.innerHTML = "";
+  log("A wild " + enemyName + " appeared!");
+
+  updateBars();
+  document.getElementById("enemyName").innerText = enemyName;
+}
+
+function updateBars() {
+  document.getElementById("enemyBar").style.width = (enemyHP / enemyMaxHP * 100) + "%";
+  document.getElementById("playerBar").style.width = (playerHP / maxHP * 100) + "%";
+}
+
+function attack() {
+  let dmg = Math.floor(Math.random() * 10) + 5;
+  enemyHP -= dmg;
+  log("You hit for " + dmg);
+
+  if (enemyHP <= 0) {
+    log("You defeated " + enemyName);
+    endBattle();
+    return;
+  }
+
+  enemyTurn();
+  updateBars();
+}
+
+function enemyTurn() {
+  let dmg = Math.floor(Math.random() * 8) + 3;
+  playerHP -= dmg;
+  log(enemyName + " hits you for " + dmg);
+
+  if (playerHP <= 0) {
+    log("You fainted! Reloading...");
+    setTimeout(() => location.reload(), 1500);
+  }
+}
+
+function run() {
+  if (Math.random() < 0.6) {
+    log("You escaped!");
+    endBattle();
+  } else {
+    log("Couldn't escape!");
+    enemyTurn();
+    updateBars();
+  }
+}
+
+function endBattle() {
+  setTimeout(() => {
+    inBattle = false;
+    battleUI.style.display = "none";
+    game.style.display = "grid";
+  }, 1000);
+}
+</script>
+
+</body>
+</html>
