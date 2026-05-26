@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CSS 3D Freestyle Skatez</title>
+  <style>
+    body { 
+        margin: 0; 
+        background: #0a0a1a; 
+        overflow: hidden; 
+        color: #00ffcc; 
+        font-family: 'Courier New', monospace; 
+        user-select: none; 
+    }
+    #ui { 
+        position: absolute; top: 20px; left: 20px; z-index: 10; pointer-events: none; 
+        background: rgba(0,0,0,0.7); padding: 15px; border: 1px solid #0ff; border-radius: 8px;
+    }
+    h1 { margin: 0; letter-spacing: 4px; text-shadow: 0 0 10px #00ffcc; font-size: 24px;}
+    p { color: #ff00ff; margin-top: 5px; font-weight: bold; font-size: 14px;}
+    ul { list-style: none; padding: 0; margin: 10px 0 0 0; font-size: 12px; color: #fff;}
+    li { margin-bottom: 4px; }
+    span.key { color: #0ff; font-weight: bold; }
+    
+    #trick-text {
+        position: absolute; top: 20%; width: 100%; text-align: center;
+        font-size: 40px; color: #ff00ff; font-weight: bold; text-shadow: 0 0 20px #ff00ff;
+        opacity: 0; transition: opacity 0.3s; z-index: 10;
+    }
+
+    /* 3D Engine Setup */
+    #scene { 
+        perspective: 800px; 
+        width: 100vw; height: 100vh; 
+        overflow: hidden; position: relative; 
+    }
+    
+    /* Camera Follows the Player */
+    #camera {
+        position: absolute; top: 50%; left: 50%;
+        width: 0; height: 0;
+        transform-style: preserve-3d;
+        /* Default camera angle */
+        transform: rotateX(65deg) translateZ(-200px);
+    }
+
+    /* The World Contains the Ground and Objects */
+    #world { 
+        position: absolute; top: 0; left: 0;
+        transform-style: preserve-3d; 
+    }
+    
+    /* Massive Floor */
+    #ground {
+      position: absolute; 
+      top: -2000px; left: -2000px; 
+      width: 4000px; height: 4000px;
+      background: 
+        linear-gradient(rgba(0, 255, 204, 0.2) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(0, 255, 204, 0.2) 2px, transparent 2px);
+      background-size: 100px 100px;
+      background-color: #111;
+      border: 5px solid #0ff;
+    }
+
+    /* Player Container */
+    #player {
+      position: absolute; 
+      transform-style: preserve-3d;
+    }
+    
+    /* Skateboard Deck */
+    .deck {
+      position: absolute; 
+      width: 50px; height: 120px; 
+      background: #ff00ff;
+      left: -25px; top: -60px;
+      border-radius: 25px; 
+      border: 3px solid #fff;
+      box-shadow: 0 0 20px #ff00ff;
+      /* Rotate to lay flat on the ground */
+      transform: translateZ(15px);
+    }
+
+    /* Static Obstacles */
+    .box {
+      position: absolute; 
+      width: 80px; height: 80px; 
+      background: #00ffcc;
+      transform-style: preserve-3d;
+      box-shadow: 0 0 15px #00ffcc;
+      border: 2px solid #fff;
+      margin-left: -40px; margin-top: -40px;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h1>skatez: freestyle</h1>
+    <ul>
+        <li><span class="key">W</span> - Drive Forward</li>
+        <li><span class="key">S</span> - Brake / Reverse</li>
+        <li><span class="key">A/D</span> - Steer</li>
+        <li><span class="key">SPACE</span> - Ollie (Jump)</li>
+        <li><span class="key">J</span> - Kickflip</li>
+        <li><span class="key">K</span> - 360 Spin</li>
+    </ul>
+  </div>
+  
+  <div id="trick-text">KICKFLIP!</div>
+  
+  <div id="scene">
+    <div id="camera">
+      <div id="world">
+        <div id="ground"></div>
+        <div id="player">
+            <div class="deck" id="deck"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const playerEl = document.getElementById('player');
+    const deckEl = document.getElementById('deck');
+    const worldEl = document.getElementById('world');
+    const trickText = document.getElementById('trick-text');
+    
+    // Generate Random Skatepark Blocks
+    for(let i=0; i<15; i++) {
+        let box = document.createElement('div');
+        box.className = 'box';
+        // Random position between -1000 and 1000
+        let bx = (Math.random() - 0.5) * 2000;
+        let by = (Math.random() - 0.5) * 2000;
+        // The box sits on the ground (Z-axis in CSS points "out" of the screen)
+        box.style.transform = `translate3d(${bx}px, ${by}px, 40px)`;
+        worldEl.appendChild(box);
+    }
+
+    // Physics Variables
+    let px = 0, py = 0; // Player World Position (X and Y map to the floor in CSS)
+    let pz = 0; // Player Jump Height (Z-axis in CSS)
+    let angle = 0; // Direction facing
+    let speed = 0;
+    
+    const maxSpeed = 15;
+    const accel = 0.5;
+    const friction = 0.96;
+    const turnSpeed = 0.06;
+
+    // Jump / Trick Variables
+    let jumpVel = 0;
+    let isGrounded = true;
+    let deckSpinX = 0;
+    let deckSpinZ = 0;
+    let activeTrick = false;
+    
+    const keys = { w: false, a: false, s: false, d: false };
+
+    window.addEventListener('keydown', e => {
+      let k = e.key.toLowerCase();
+      if (keys.hasOwnProperty(k)) keys[k] = true;
+      
+      // Jump
+      if (e.code === 'Space' && isGrounded) {
+        jumpVel = 25; // Upward force
+        isGrounded = false;
+      }
+      
+      // Tricks (Only in air)
+      if (!isGrounded && !activeTrick) {
+          if (k === 'j') {
+              activeTrick = true;
+              trickText.innerText = "KICKFLIP!";
+              trickText.style.opacity = 1;
+              deckSpinX = 360; // Flip the deck
+              setTimeout(() => trickText.style.opacity = 0, 800);
+          }
+          if (k === 'k') {
+              activeTrick = true;
+              trickText.innerText = "360 SPIN!";
+              trickText.style.opacity = 1;
+              deckSpinZ = 360; // Spin the deck
+              setTimeout(() => trickText.style.opacity = 0, 800);
+          }
+      }
+    });
+
+    window.addEventListener('keyup', e => {
+      let k = e.key.toLowerCase();
+      if (keys.hasOwnProperty(k)) keys[k] = false;
+    });
+
+    function loop() {
+      requestAnimationFrame(loop);
+      
+      // 1. Acceleration & Friction
+      if (keys.w) speed += accel;
+      if (keys.s) speed -= accel;
+      speed *= friction;
+      
+      if (speed > maxSpeed) speed = maxSpeed;
+      if (speed < -maxSpeed / 2) speed = -maxSpeed / 2;
+
+      // 2. Steering (Reverse steering if going backwards)
+      if (Math.abs(speed) > 0.5) {
+          let dir = speed > 0 ? 1 : -1;
+          if (keys.a) angle -= turnSpeed * dir;
+          if (keys.d) angle += turnSpeed * dir;
+      }
+
+      // 3. Update Position based on angle
+      // Note: CSS Y-axis acts as our forward/backward on the ground map
+      px += Math.sin(angle) * speed;
+      py -= Math.cos(angle) * speed;
+
+      // 4. Jumping Physics
+      if (!isGrounded) {
+          pz += jumpVel;
+          jumpVel -= 1.5; // Gravity
+          
+          // Animate Tricks
+          if (deckSpinX > 0) deckSpinX -= 15;
+          if (deckSpinZ > 0) deckSpinZ -= 15;
+
+          if (pz <= 0) {
+              pz = 0;
+              isGrounded = true;
+              activeTrick = false;
+              deckSpinX = 0;
+              deckSpinZ = 0;
+          }
+      }
+
+      // 5. Apply Player Transforms
+      // We rotate the player on the Z axis so they face the right way on the floor
+      playerEl.style.transform = `translate3d(${px}px, ${py}px, ${pz}px) rotateZ(${angle}rad)`;
+      
+      // Apply trick rotations to the inner deck element
+      deckEl.style.transform = `translateZ(15px) rotateX(${deckSpinX}deg) rotateZ(${deckSpinZ}deg)`;
+
+      // 6. Move the World to follow the Player (Camera Logic)
+      // We move the world in the exact opposite direction of the player
+      worldEl.style.transform = `translate3d(${-px}px, ${-py}px, 0)`;
+    }
+    
+    // Start Game
+    loop();
+  </script>
+</body>
+</html>
