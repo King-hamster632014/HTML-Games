@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Realm of Shadows V9 - Grand Synthesis</title>
+    <style>
+        :root {
+            --bg: #050508;
+            --panel: #11111d;
+            --accent: #fca311;
+            --hp: #ff4d6d;
+            --mana: #00b4d8;
+            --rarity-mythic: #ff00ff;
+            --text: #e0e1dd;
+        }
+
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        #game-container { background: var(--panel); width: 850px; padding: 25px; border-radius: 15px; border: 1px solid #2a2a3a; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        
+        .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 15px; }
+        .card { background: rgba(0,0,0,0.5); padding: 8px; border-radius: 6px; border: 1px solid #333; text-align: center; font-size: 13px; }
+        
+        #text-box { background: #000; height: 220px; padding: 15px; border-radius: 8px; overflow-y: auto; margin-bottom: 20px; font-family: 'Consolas', monospace; border: 1px solid #222; font-size: 13px; line-height: 1.5; }
+        #controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+        button { padding: 15px; background: #1b1b2b; color: #fff; border: 1px solid #444; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover:not(:disabled) { background: #2a2a4a; border-color: var(--accent); color: var(--accent); }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .mythic { color: var(--rarity-mythic); font-weight: bold; text-shadow: 0 0 5px var(--rarity-mythic); }
+        .boss-warn { color: #ff0000; font-weight: bold; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.3; } }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h2 style="color:var(--accent); text-align:center; margin-top:0; letter-spacing: 2px;">🌑 REALM OF SHADOWS V9</h2>
+    
+    <div class="stat-grid">
+        <div class="card">HP: <span id="hp" style="color:var(--hp)">-</span></div>
+        <div class="card">MP: <span id="mana" style="color:var(--mana)">-</span></div>
+        <div class="card">GOLD: <span id="gold" style="color:#ffd166">-</span></div>
+        <div class="card">LVL: <span id="lvl">-</span></div>
+        <div class="card">PET: <span id="pet-ui" style="color:var(--accent)">-</span></div>
+    </div>
+
+    <div style="font-size:11px; margin-bottom:10px; color:#888; text-align:center; background: rgba(255,255,255,0.05); padding: 5px;">
+        EQUIPPED: <span id="cur-wep" style="color:#fff">-</span> (<span id="atk-val">0</span> ATK) | 
+        GUARDS DOWN: <span id="guards">0</span>/3
+    </div>
+
+    <div id="text-box">Waking up in the Shattered Realm...</div>
+
+    <div id="controls">
+        <button id="b1"></button>
+        <button id="b2"></button>
+        <button id="b3"></button>
+        <button id="b4"></button>
+    </div>
+</div>
+
+<script>
+    // --- DATABASE ---
+    const crateWeapons = [
+        { name: "Steel Slicer", pwr: 25, rarity: "rare" },
+        { name: "Void Reaver", pwr: 55, rarity: "epic" },
+        { name: "Sun-Killer", pwr: 130, rarity: "mythic" }
+    ];
+
+    const pets = {
+        turtle: { name: "Stone Turtle", bonus: "Blocks 10 DMG" },
+        bat: { name: "Void Bat", bonus: "+25% Gold" }
+    };
+
+    // --- STATE ---
+    let player = {
+        hp: 150, maxHp: 150, mana: 80, maxMana: 80, 
+        gold: 150, lvl: 1, guardsDefeated: 0,
+        weapon: { name: "Rusty Dirk", pwr: 12 },
+        pet: null
+    };
+    let currentEnemy = null;
+
+    function log(msg, color = "var(--text)") {
+        const box = document.getElementById("text-box");
+        box.innerHTML += `<div style="color:${color}">> ${msg}</div>`;
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function updateUI() {
+        document.getElementById("hp").innerText = Math.max(0, player.hp);
+        document.getElementById("mana").innerText = player.mana;
+        document.getElementById("gold").innerText = player.gold;
+        document.getElementById("lvl").innerText = player.lvl;
+        document.getElementById("pet-ui").innerText = player.pet ? pets[player.pet].name : "None";
+        document.getElementById("cur-wep").innerText = player.weapon.name;
+        document.getElementById("atk-val").innerText = player.weapon.pwr;
+        document.getElementById("guards").innerText = player.guardsDefeated;
+    }
+
+    function setMenu(msg, b1, b2, b3, b4) {
+        log(msg);
+        configBtn("b1", b1);
+        configBtn("b2", b2);
+        configBtn("b3", b3);
+        configBtn("b4", b4);
+        updateUI();
+    }
+
+    function configBtn(id, data) {
+        const btn = document.getElementById(id);
+        if (data) {
+            btn.style.display = "block";
+            btn.innerText = data.text;
+            btn.onclick = data.fn;
+        } else {
+            btn.style.display = "none";
+        }
+    }
+
+    // --- GAME FLOW ---
+    function start() {
+        document.getElementById("text-box").innerHTML = "";
+        setMenu("A stranger offers you a pet to start your journey.",
+            { text: "Take Turtle (Defense)", fn: () => { player.pet = 'turtle'; goTown(); } },
+            { text: "Take Bat (Gold)", fn: () => { player.pet = 'bat'; goTown(); } }
+        );
+    }
+
+    function goTown() {
+        currentEnemy = null;
+        setMenu("The Outpost is safe. You can prepare here.",
+            { text: "Travel (World Map)", fn: goMap },
+            { text: "Blacksmith", fn: goShop },
+            { text: "Buy Crate (100g)", fn: openCrate },
+            { text: "Rest (Free)", fn: () => { player.hp = player.maxHp; log("Healed to full."); updateUI(); } }
+        );
+    }
+
+    function goMap() {
+        setMenu("Where shall you travel?",
+            { text: "Whispering Woods", fn: () => startFight("Oak Spirit", 150, 15) },
+            { text: "Void Core (Boss)", fn: () => startFight("Shadow Lord", 400, 35), disabled: player.lvl < 3 },
+            { text: "Return to Town", fn: goTown }
+        );
+    }
+
+    function goShop() {
+        setMenu("The Blacksmith has basic gear.",
+            { text: "Iron Axe (150g/25 ATK)", fn: () => buyWep("Iron Axe", 25, 150) },
+            { text: "Mana Recharge (40g)", fn: () => { if(player.gold>=40){player.gold-=40;player.mana=player.maxMana;log("Mana refilled.");updateUI();} } },
+            { text: "Leave", fn: goTown }
+        );
+    }
+
+    // --- ACTIONS ---
+    function buyWep(name, pwr, cost) {
+        if (player.gold >= cost) {
+            player.gold -= cost; player.weapon = { name, pwr };
+            log(`Bought ${name}!`); updateUI();
+        } else { log("Not enough gold!"); }
+    }
+
+    function openCrate() {
+        if (player.gold < 100) return log("Need 100g!");
+        player.gold -= 100; log("Opening Crate...", "var(--accent)");
+        setTimeout(() => {
+            let r = Math.random();
+            let item = r < 0.1 ? crateWeapons[2] : (r < 0.4 ? crateWeapons[1] : crateWeapons[0]);
+            player.weapon = item;
+            log(`FOUND: ${item.name}!`, item.rarity === 'mythic' ? 'var(--rarity-mythic)' : 'var(--accent)');
+            updateUI();
+        }, 600);
+    }
+
+    // --- COMBAT ---
+    function startFight(name, hp, atk) {
+        currentEnemy = { name, hp, atk };
+        combatMenu();
+    }
+
+    function combatMenu() {
+        setMenu(`BATTLE: ${currentEnemy.name} (${currentEnemy.hp} HP)`,
+            { text: "Attack", fn: attack },
+            { text: "Fireball (20m)", fn: castFire },
+            { text: "Flee", fn: goTown }
+        );
+    }
+
+    function attack() {
+        let d = player.weapon.pwr + (player.lvl * 2);
+        currentEnemy.hp -= d; log(`You strike for ${d}.`);
+        if (currentEnemy.hp <= 0) win(); else enemyTurn();
+    }
+
+    function castFire() {
+        if (player.mana < 20) return log("Low Mana!");
+        player.mana -= 20;
+        let d = player.weapon.pwr * 2;
+        currentEnemy.hp -= d; log(`FIREBALL! Dealt ${d} damage!`, "var(--mana)");
+        if (currentEnemy.hp <= 0) win(); else enemyTurn();
+    }
+
+    function enemyTurn() {
+        let def = player.pet === 'turtle' ? 10 : 0;
+        let d = Math.max(2, currentEnemy.atk - def);
+        player.hp -= d;
+        log(`${currentEnemy.name} hits for ${d}.`, "var(--hp)");
+        if (player.hp <= 0) { alert("Game Over."); start(); } else combatMenu();
+    }
+
+    function win() {
+        let g = 40 + (player.lvl * 10);
+        if (player.pet === 'bat') g = Math.floor(g * 1.25);
+        player.gold += g; player.lvl++;
+        log(`Victory! Found ${g} gold. Leveled up!`, "var(--accent)");
+        goTown();
+    }
+
+    start();
+</script>
+</body>
+</html>
